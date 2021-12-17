@@ -21,8 +21,9 @@
 * 1.0.0  2021-02-06 aelfot    Initial version
 * 1.1.0  2021-09-20 aelfot    latest aelfot version on GitHub
 * 2.0.0  2021-12-17 kkossev   English language option and translation;
-* 2.0.1  2021-12-17 kkossev   Added capabilities Refresh and Initialize; added forceStateChange option
+* 2.0.1  2021-12-17 kkossev   Added Refresh and Initialize; added forceStateChange option
 * 2.0.2  2021-12-17 kkossev   Added refreshRate
+* 2.0.3  2021-12-17 kkossev   Added calibrate function
 *
 */
 
@@ -50,6 +51,8 @@ metadata {
 		command "SendTemperature", [[name: "Temperature", type: "NUMBER", description:""]]
 		command "manual"
         command "disableLocalOperations"    //"lokaleBedinungDeaktiviert"
+        command "calibrate"
+
 
 		fingerprint  mfr:"0148", prod:"0003", deviceId:"0001", inClusters:"0x5E,0x55,0x98,0x9F"
 	}
@@ -297,6 +300,7 @@ void off() {
 	cmds << new hubitat.zwave.commands.thermostatmodev3.ThermostatModeSet(mode:0x00)
 	cmds << new hubitat.zwave.commands.thermostatmodev3.ThermostatModeGet()
 	sendToDevice(cmds)
+    sendEvent(name:"thermostatOperatingState", value: "idle", isStateChange: true)
 }
 
 void heat() {
@@ -320,6 +324,7 @@ void emergencyHeat() {
 	cmds << new hubitat.zwave.commands.thermostatmodev3.ThermostatModeSet(mode:0x0F)
 	cmds << new hubitat.zwave.commands.thermostatmodev3.ThermostatModeGet()
 	sendToDevice(cmds)
+    sendEvent(name:"thermostatOperatingState", value: "heating", isStateChange: true)
 }
 
 void manual() {
@@ -590,6 +595,127 @@ void autoRefresh() {
     }
 }
 
+// Constants
+@Field static final Integer CALIBRATE_IDLE                    = 0
+@Field static final Integer CALIBRATE_START                   = 1
+@Field static final Integer CALIBRATE_TURN_OFF                = 2
+@Field static final Integer CALIBRATE_CHECK_IF_TURNED_OFF     = 3
+@Field static final Integer CALIBRATE_TURN_EMERGENCY_HEAT     = 4
+@Field static final Integer CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT = 5
+@Field static final Integer CALIBRATE_TURN_HEAT               = 6
+@Field static final Integer CALIBRATE_CHECK_IF_TURNED_HEAT    = 7
+@Field static final Integer CALIBRATE_END                     = 8
+
+def calibrate() {
+    log.debug "starting calibrate() for ${device.displayName} .."
+    state.nextCalibrateState = CALIBRATE_START
+    runIn (01, 'calibrateStateMachine')    
+}
+
+def calibrateStateMachine() {
+    switch ( state.nextCalibrateState ) {
+        case CALIBRATE_IDLE :   
+            log.trace "state.nextCalibrateState IDLE"
+            break
+        case CALIBRATE_START :  // 1 starting the calibration state machine
+            log.debug "state.calibrateState ($state.nextCalibrateState) ->  start"
+            state.nextCalibrateState = CALIBRATE_TURN_OFF   
+            state.calibrateRetry = 0
+            runIn (01, 'calibrateStateMachine')
+            break
+        case CALIBRATE_TURN_OFF :  // turn off
+            off()            // close the valve 100%
+            log.debug "state.calibrateState ($state.nextCalibrateState) -> now turning OFF"
+            state.nextCalibrateState = CALIBRATE_CHECK_IF_TURNED_OFF
+            runIn (5, calibrateStateMachine)
+            break
+        case CALIBRATE_CHECK_IF_TURNED_OFF :
+            if (device.currentValue("thermostatMode") == "off" ) {    // TRV was successfuly turned off in the previous step
+                state.calibrateRetry = 0
+                state.nextCalibrateState = CALIBRATE_TURN_EMERGENCY_HEAT
+                runIn (1, calibrateStateMachine)
+            }
+            else if (state.calibrateRetry < 3) {    // retry
+                state.calibrateRetry = state.calibrateRetry +1
+                state.nextCalibrateState = CALIBRATE_TURN_OFF    // try again
+                runIn (5, calibrateStateMachine)
+                log.warn "ERROR turning OFF - retrying...($state.nextCalibrateState)"
+            }
+            else {
+                log.error "ERROR turning OFF - GIVING UP!...($state.nextCalibrateState)"
+                state.nextCalibrateState = CALIBRATE_TURN_HEAT    // CALIBRATE_TURN_HEAT
+                state.calibrateRetry = 0
+                runIn (3, calibrateStateMachine)
+            }
+            break
+        case CALIBRATE_TURN_EMERGENCY_HEAT : // turn emergencyHeat
+            log.trace "state.nextCalibrateState ($state.nextCalibrateState) -> now turning EMERGENCY_HEAT"
+            emergencyHeat()    // open the valve 100%
+            state.nextCalibrateState = CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT
+            runIn (5, calibrateStateMachine)
+            break        
+        case CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT :
+            if (device.currentValue("thermostatMode") == "emergency heat" ) {    // TRV has been successfuly swithed to emergency heat in the previous step
+                state.nextCalibrateState = CALIBRATE_TURN_HEAT    // CALIBRATE_TURN_HEAT
+                state.calibrateRetry = 0
+                runIn (1, calibrateStateMachine)
+            }  else if (state.calibrateRetry < 3) {    // retry
+                log.error "ERROR turning emergency heat - retrying...($state.calibrateRetry)"
+                state.calibrateRetry = state.calibrateRetry +1
+                state.nextCalibrateState = CALIBRATE_TURN_EMERGENCY_HEAT    // try again
+                runIn (5, calibrateStateMachine)
+            } else {
+                log.error "ERROR turning emergency heat - GIVING UP!...($state.calibrateRetry)"
+                state.nextCalibrateState = CALIBRATE_TURN_HEAT   // CALIBRATE_TURN_HEAT
+                state.calibrateRetry = 0
+                runIn (3, calibrateStateMachine)
+            }
+            break
+        case CALIBRATE_TURN_HEAT :     // turn heat (auto)
+            log.debug "state.nextCalibrateState ($state.nextCalibrateState) -> now turning heat/auto"
+            heat()    // back to heat mode
+            state.nextCalibrateState = CALIBRATE_CHECK_IF_TURNED_HEAT
+            runIn (5, calibrateStateMachine)
+            break
+        case CALIBRATE_CHECK_IF_TURNED_HEAT :
+            if (device.currentValue("thermostatMode") == "heat" ) {    // TRV has been successfuly turned to heat mode in the previous step
+                state.nextCalibrateState = CALIBRATE_END       // verify if back to normal..
+                state.calibrateRetry = 0
+                runIn (10, calibrateStateMachine)
+            }
+            else if (state.calibrateRetry < 3 ) {    // retry
+                log.warn "ERROR turning heat - retrying...($state.calibrateRetry)"
+                state.calibrateRetry = state.calibrateRetry +1
+                state.nextCalibrateState = CALIBRATE_TURN_HEAT
+                runIn (5, calibrateStateMachine)
+            }
+            else {
+                log.error "ERROR turning emergencyHeat - GIVING UP !...($state.calibrateRetry)"
+                state.nextCalibrateState = CALIBRATE_END     // verify if back to normal..
+                state.calibrateRetry = 0
+                runIn (3, calibrateStateMachine)
+            }
+            break
+        case CALIBRATE_END :   // verify if back to heat (auto)
+            if (device.currentValue("thermostatMode") == "heat" ) {    // TRV has been successfuly turned to heat/auto
+                log.info "state.calibrateState ($state.nextCalibrateState) ->  finished successfuly"
+            }
+            else {
+                log.error "ERROR CALIBRATE_END - GIVING UP!...($state.calibrateRetry)"
+            }
+            state.nextCalibrateState = CALIBRATE_IDLE
+            state.calibrateRetry = 0
+            unschedule(calibrateStateMachine)
+            break
+        default :
+            log.error "state.calibrate UNKNOWN = ($state.nextCalibrateState)"
+            state.nextCalibrateState = CALIBRATE_IDLE
+            state.calibrateRetry = 0
+            unschedule(calibrateStateMachine)
+            break
+    }
+}
+
 void updated() {
 	def cmds = []
 	cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:1,	size:1,	scaledConfigurationValue: parameter1 ? 0x01 : 0x00)
@@ -637,6 +763,7 @@ void installed() {
 	}
 	sendToDevice(cmds)
     autoRefresh()
+    unschedule(calibrateStateMachine)
 }
 
 def setDeviceLimits() { // for google and amazon compatability

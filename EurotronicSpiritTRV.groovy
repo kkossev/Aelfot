@@ -23,7 +23,8 @@
 * 2.0.0  2021-12-17 kkossev   English language option and translation;
 * 2.0.1  2021-12-17 kkossev   Added Refresh and Initialize; added forceStateChange option
 * 2.0.2  2021-12-17 kkossev   Added refreshRate
-* 2.0.3  2021-12-17 kkossev   Added calibrate function
+* 2.0.3  2021-12-18 kkossev   Added calibrate function
+* 2.0.4  2021-12-18 kkossev   calibrate optimization
 *
 */
 
@@ -606,111 +607,86 @@ void autoRefresh() {
 @Field static final Integer CALIBRATE_CHECK_IF_TURNED_HEAT    = 7
 @Field static final Integer CALIBRATE_END                     = 8
 
+@Field static final Integer CALIBRATE_RETRIES_NR              = 3
+
+
 def calibrate() {
     log.debug "starting calibrate() for ${device.displayName} .."
-    state.nextCalibrateState = CALIBRATE_START
-    runIn (01, 'calibrateStateMachine')    
+    runIn (01, 'calibrateStateMachine',  [data: ["state": CALIBRATE_START, "retry": 0]])
 }
 
-def calibrateStateMachine() {
-    switch ( state.nextCalibrateState ) {
+def calibrateStateMachine( Map data ) {
+    switch (data.state) {
         case CALIBRATE_IDLE :   
-            log.trace "state.nextCalibrateState IDLE"
+            log.trace "data.state IDLE"
             break
         case CALIBRATE_START :  // 1 starting the calibration state machine
-            log.debug "state.calibrateState ($state.nextCalibrateState) ->  start"
-            state.nextCalibrateState = CALIBRATE_TURN_OFF   
-            state.calibrateRetry = 0
-            runIn (01, 'calibrateStateMachine')
+            log.debug "data.state ($data.state) ->  start"
+            runIn (01, 'calibrateStateMachine', [data: ["state": CALIBRATE_TURN_OFF, "retry": 0]])
             break
         case CALIBRATE_TURN_OFF :  // turn off
             off()            // close the valve 100%
-            log.debug "state.calibrateState ($state.nextCalibrateState) -> now turning OFF"
-            state.nextCalibrateState = CALIBRATE_CHECK_IF_TURNED_OFF
-            runIn (5, calibrateStateMachine)
+            log.debug "data.state ($data.state) -> now turning OFF"
+            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_OFF, "retry": 0]])
             break
         case CALIBRATE_CHECK_IF_TURNED_OFF :
             if (device.currentValue("thermostatMode") == "off" ) {    // TRV was successfuly turned off in the previous step
-                state.calibrateRetry = 0
-                state.nextCalibrateState = CALIBRATE_TURN_EMERGENCY_HEAT
-                runIn (1, calibrateStateMachine)
+                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_EMERGENCY_HEAT, "retry": 0]])
             }
-            else if (state.calibrateRetry < 3) {    // retry
-                state.calibrateRetry = state.calibrateRetry +1
-                state.nextCalibrateState = CALIBRATE_TURN_OFF    // try again
-                runIn (5, calibrateStateMachine)
-                log.warn "ERROR turning OFF - retrying...($state.nextCalibrateState)"
+            else if (data.retry < CALIBRATE_RETRIES_NR) {    // retry
+                log.warn "ERROR turning OFF - retrying...($data.retry)"
+                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_OFF, "retry": data.retry+1]])
             }
             else {
-                log.error "ERROR turning OFF - GIVING UP!...($state.nextCalibrateState)"
-                state.nextCalibrateState = CALIBRATE_TURN_HEAT    // CALIBRATE_TURN_HEAT
-                state.calibrateRetry = 0
-                runIn (3, calibrateStateMachine)
+                log.error "ERROR turning OFF - GIVING UP!...state is ($data.state)"
+                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT, "retry": 0]])
             }
             break
         case CALIBRATE_TURN_EMERGENCY_HEAT : // turn emergencyHeat
-            log.trace "state.nextCalibrateState ($state.nextCalibrateState) -> now turning EMERGENCY_HEAT"
+            log.trace "data.state ($data.state) -> now turning EMERGENCY_HEAT"
             emergencyHeat()    // open the valve 100%
-            state.nextCalibrateState = CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT
-            runIn (5, calibrateStateMachine)
+            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT, "retry": 0]])
             break        
         case CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT :
             if (device.currentValue("thermostatMode") == "emergency heat" ) {    // TRV has been successfuly swithed to emergency heat in the previous step
-                state.nextCalibrateState = CALIBRATE_TURN_HEAT    // CALIBRATE_TURN_HEAT
-                state.calibrateRetry = 0
-                runIn (1, calibrateStateMachine)
-            }  else if (state.calibrateRetry < 3) {    // retry
-                log.error "ERROR turning emergency heat - retrying...($state.calibrateRetry)"
-                state.calibrateRetry = state.calibrateRetry +1
-                state.nextCalibrateState = CALIBRATE_TURN_EMERGENCY_HEAT    // try again
-                runIn (5, calibrateStateMachine)
+                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT, "retry": 0]])
+            }  else if (data.retry < CALIBRATE_RETRIES_NR) {    // retry
+                log.error "ERROR turning emergency heat - retrying...($data.retry)"
+                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_EMERGENCY_HEAT, "retry": data.retry+1]])
             } else {
-                log.error "ERROR turning emergency heat - GIVING UP!...($state.calibrateRetry)"
-                state.nextCalibrateState = CALIBRATE_TURN_HEAT   // CALIBRATE_TURN_HEAT
-                state.calibrateRetry = 0
-                runIn (3, calibrateStateMachine)
+                log.error "ERROR turning emergency heat - GIVING UP!... state is($data.state)"
+                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT, "retry": 0]])
             }
             break
         case CALIBRATE_TURN_HEAT :     // turn heat (auto)
-            log.debug "state.nextCalibrateState ($state.nextCalibrateState) -> now turning heat/auto"
+            log.debug "data.state ($data.state) -> now turning heat/auto"
             heat()    // back to heat mode
-            state.nextCalibrateState = CALIBRATE_CHECK_IF_TURNED_HEAT
-            runIn (5, calibrateStateMachine)
+            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_HEAT, "retry": 0]])
             break
         case CALIBRATE_CHECK_IF_TURNED_HEAT :
             if (device.currentValue("thermostatMode") == "heat" ) {    // TRV has been successfuly turned to heat mode in the previous step
-                state.nextCalibrateState = CALIBRATE_END       // verify if back to normal..
-                state.calibrateRetry = 0
-                runIn (10, calibrateStateMachine)
+                runIn (10, calibrateStateMachine, [data: ["state": CALIBRATE_END, "retry": 0]])
             }
-            else if (state.calibrateRetry < 3 ) {    // retry
-                log.warn "ERROR turning heat - retrying...($state.calibrateRetry)"
-                state.calibrateRetry = state.calibrateRetry +1
-                state.nextCalibrateState = CALIBRATE_TURN_HEAT
-                runIn (5, calibrateStateMachine)
+            else if (data.retry < CALIBRATE_RETRIES_NR ) {    // retry
+                log.warn "ERROR turning heat - retrying...($data.retry)"
+                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT, "retry": data.retry+1]])
             }
             else {
-                log.error "ERROR turning emergencyHeat - GIVING UP !...($state.calibrateRetry)"
-                state.nextCalibrateState = CALIBRATE_END     // verify if back to normal..
-                state.calibrateRetry = 0
-                runIn (3, calibrateStateMachine)
+                log.error "ERROR turning emergencyHeat - GIVING UP !... state is($data.state)"
+                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_END, "retry": 0]])
             }
             break
         case CALIBRATE_END :   // verify if back to heat (auto)
             if (device.currentValue("thermostatMode") == "heat" ) {    // TRV has been successfuly turned to heat/auto
-                log.info "state.calibrateState ($state.nextCalibrateState) ->  finished successfuly"
+                log.info "data.state ($data.state) ->  finished successfuly"
             }
             else {
-                log.error "ERROR CALIBRATE_END - GIVING UP!...($state.calibrateRetry)"
+                log.error "ERROR CALIBRATE_END - GIVING UP!... state is ($data.state)"
             }
-            state.nextCalibrateState = CALIBRATE_IDLE
-            state.calibrateRetry = 0
             unschedule(calibrateStateMachine)
             break
         default :
-            log.error "state.calibrate UNKNOWN = ($state.nextCalibrateState)"
-            state.nextCalibrateState = CALIBRATE_IDLE
-            state.calibrateRetry = 0
+            log.error "state calibrate UNKNOWN = ${data.state}"
             unschedule(calibrateStateMachine)
             break
     }

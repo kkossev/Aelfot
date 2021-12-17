@@ -21,7 +21,7 @@
 * 1.0.0  2021-02-06 aelfot    Initial version
 * 1.1.0  2021-09-20 aelfot    latest aelfot version on GitHub
 * 2.0.0  2021-12-17 kkossev   English language option and translation;
-* 2.0.1  2021-12-17 kkossev   Added capability Refresh;
+* 2.0.1  2021-12-17 kkossev   Added capabilities Refresh and Initialize; added forceStateChange option
 *
 */
 
@@ -40,6 +40,7 @@ metadata {
 		capability "Polling"
 		capability "SwitchLevel"
         capability "Refresh"
+        capability "Initialize"
 
 		attribute "ExterneTemperatur", "string"
 		attribute "Notifity",			"string"
@@ -73,6 +74,7 @@ metadata {
     		input name:"parameter7",	type:"enum",	title: "Window Open Detection",			    description: "Default: Medium sensitivity",	            defaultValue:2,		options: windowDetectOptions
     		input name:"parameter8",	type:"number",	title: "Temperature offset",				description: "Default: no correction. range: -5.0..5.0",defaultValue:0,		range: "-5.0..5.0"
     		input name:"parameter9",	type:"bool",	title: "Use external temperature sensor?",	description: "Default: No",						        defaultValue:false
+    		input name:"forceStateChange",type:"bool",	title: "Force State Change",	        	description: "Default: No (used for better graphs only)",defaultValue:false
     		input name:"lg",			type:"bool",	title: "Debug Logging",			        	description: "Default: No",						        defaultValue:false
         }
         else
@@ -85,7 +87,8 @@ metadata {
     		input name:"parameter6",	type:"number",	title: "Meldung bei Valvedifferenz",		description: "Default: Deaktiviert",			defaultValue:0,		range: "0..100"
     		input name:"parameter7",	type:"enum",	title: "Fensteroffnungserkennung",			description: "Default: Empfindlichkeit mittel",	defaultValue:2,		options: windowDetectOptions
     		input name:"parameter8",	type:"number",	title: "Temperature offset",				description: "Default: Keine Korrektur",		defaultValue:0,		range: "-5.0..5.0"
-    		input name:"parameter9",	type:"bool",	title: "Temperatur extern bereitgestellt?",	description: "",								defaultValue:false
+    		input name:"parameter9",	type:"bool",	title: "Temperatur extern bereitgestellt?",	description: "Default: Nein",					defaultValue:false
+    		input name:"forceStateChange",type:"bool",	title: "Force State Change",	        	description: "Default: Nein (used for better graphs only)",defaultValue:false
     		input name:"lg",			type:"bool",	title: "Logging on/off",					description: "",								defaultValue:false
         }            
 	}
@@ -158,8 +161,8 @@ void zwaveEvent (hubitat.zwave.commands.notificationv8.NotificationReport cmd) {
 		    }
 		    break;
 	}
-	if (lg) log.info englishLang==true ? "Notifikaiton is ${cmd}" : "Notifikaiton ist ${cmd}"
-    resultat.isStateChange = true    // KK !!    
+	if (lg) log.info englishLang==true ? "Notifikaiton is ${resultat.value}" : "Notifikaiton ist ${resultat.value}"
+    if (forceStateChange==true) {resultat.isStateChange = true}
 	sendEvent(resultat)
 }
 
@@ -174,18 +177,20 @@ void zwaveEvent (hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointR
 	if (cmd.setpointType == 0x0B) {
 		resultat.name = "coolingSetpoint"
 	}
-    if (lg) log.info englishLang==true ? "Thermostat report: ${resultat.name} is ${resultat.value}" : "Thermostat hat den Report ${cmd}"
-    resultat.isStateChange = true    // KK !!
+    resultat.unit = cmd.scale == 1 ? "°F" : "°C"
+    if (lg) log.info englishLang==true ? "Thermostat report: ${resultat.name} is ${resultat.value} ${resultat.unit}" : "Thermostat hat den ${resultat.name} Report ${resultat.value} ${resultat.unit}"
+    if (forceStateChange==true) {resultat.isStateChange = true}
 	sendEvent(resultat)
 }
 
 void zwaveEvent (hubitat.zwave.commands.batteryv1.BatteryReport cmd) {
-	if (lg) log.info englishLang==true ? "Battery report ${cmd}" : "batteryreport ist ${cmd}"
-	sendEvent(name:"battery", value: cmd.batteryLevel, displayed: true)
+	if (lg) log.info englishLang==true ? "Battery report ${cmd.batteryLevel} %" : "batteryreport ist ${cmd.batteryLevel} %"
+	sendEvent(name:"battery", value: cmd.batteryLevel, unit: "%", displayed: true, isStateChange: true)
 }
 
 void zwaveEvent(hubitat.zwave.commands.deviceresetlocallyv1.DeviceResetLocallyNotification cmd) {
-	sendEvent(name:"DeviceResetLocally", value: true, displayed = true)
+    if (lg) log.warn englishLang==true ? "Device Reset Locally" : "Device Reset Locally"
+	sendEvent(name:"DeviceResetLocally", value: true, displayed = true, isStateChange: true)
 }
 
 void zwaveEvent (hubitat.zwave.commands.protectionv1.ProtectionReport cmd) {
@@ -203,9 +208,9 @@ void zwaveEvent (hubitat.zwave.commands.protectionv1.ProtectionReport cmd) {
     		resultat.value = englishLang==true ? "No local operation possible" : "lokale Bedinung deaktiviert"
     		break;
 	}
-    resultat.isStateChange = true    // KK !!
+    if (forceStateChange==true) {resultat.isStateChange = true}
     if (resultat.value != null) {sendEvent(resultat)}
-	if (lg) log.info englishLang==true ? "protection report is ${cmd}" :"protection report ist ${cmd}"
+	if (lg) log.info englishLang==true ? "protection report is ${resultat.value}" :"protection report ist ${resultat.value}"
 }
 
 void zwaveEvent (hubitat.zwave.commands.thermostatmodev3.ThermostatModeReport cmd) {
@@ -231,9 +236,9 @@ void zwaveEvent (hubitat.zwave.commands.thermostatmodev3.ThermostatModeReport cm
         default :
             log.warn "Thermostat reported unknown mode ${cmd.mode}"
 	}
-    resultat.isStateChange = true    // KK !!
+    if (forceStateChange==true) {resultat.isStateChange = true}
 	sendEvent(resultat)
-	if (lg) log.info englishLang==true ? "Thermostat reported mode is ${resultat.value}" : "thermostat hat den mode gemeldet ${cmd}"
+	if (lg) log.info englishLang==true ? "Thermostat reported mode is ${resultat.value}" : "thermostat hat den mode gemeldet ${resultat.value}"
 }
 
 void zwaveEvent (hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport cmd) {
@@ -242,8 +247,8 @@ void zwaveEvent (hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelRepor
 	resultat.name = "temperature"
 	resultat.unit = cmd.scale == 1 ? "°F" : "°C"
 	resultat.displayed = true
-    if (lg) log.info englishLang==true ? "temperature is ${resultat.value} ${resultat.unit}" : "temperature ist ${cmd}"
-    resultat.isStateChange = true    // KK !!    
+    if (lg) log.info englishLang==true ? "temperature is ${resultat.value} ${resultat.unit}" : "temperature ist ${resultat.value} ${resultat.unit}"
+    if (forceStateChange==true) {resultat.isStateChange = true}
 	sendEvent(resultat)
 }
 
@@ -260,10 +265,10 @@ void thermostatLevelAndOperatingStateEvents (valvePos)
 	} else {
 		resultat.value = "heating"
 	}
-	if (lg) log.info englishLang==true ? "Valve position is ${valvePosition}" : "Valveposition is ${valvePosition}"
+	if (lg) log.info englishLang==true ? "Valve position is ${valvePosition} %" : "Valveposition ist ${valvePosition} %"
 	if (lg) log.info englishLang==true ? "Operating state is ${resultat.value}" : "Operating state ist ${resultat.value}"
-    resultat.isStateChange = true    // KK !!    
-	sendEvent(name:"level", value: valvePosition, isStateChange: true)
+    if (forceStateChange==true) {resultat.isStateChange = true}
+	sendEvent(name:"level", value: valvePosition, isStateChange: true, unit: "%")
 	sendEvent(resultat)    
     
 }
@@ -434,7 +439,7 @@ void setCoolingSetpoint(temperature) {
 
 void setHeatingSetpoint(temperature) {
 	def nextTemperature = getTemperature (temperature,"heat")
-	sendEvent(name: "heatingSetpoint", value: nextTemperature.toFloat(), displayed: true)
+	sendEvent(name: "heatingSetpoint", value: nextTemperature.toFloat(), displayed: true, unit: cmd.scale == 1 ? "°F" : "°C")
 	def cmds = []
 	cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointSet(precision:1, scale:0, scaledValue: nextTemperature, setpointType: 0x01)
 	cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x01)
@@ -529,8 +534,8 @@ void lokaleBedinungDeaktiviert () {
 
 void poll() {
 	def cmds = []
-	cmds << new hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelGet()
-	cmds << new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)
+	cmds << new hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelGet()                // valve and simulated OperatingState 
+	cmds << new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)    // temperature
 	sendToDevice(cmds)
 	if (lg) log.info "Polling"
 }
@@ -540,16 +545,8 @@ void refresh() {
 	cmds << new hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelGet()                // valve and simulated OperatingState 
 	cmds << new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)    // temperature
     cmds << new hubitat.zwave.commands.thermostatmodev3.ThermostatModeGet()                    // operation mode (heat, cool, ...)
-    
 	cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x01)    // heatingSetpoint 
 	//cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x0B)    // coolingSetpoint - not needed!
-    
-   // cmds << new hubitat.zwave.commands.thermostatoperatingstatev1.ThermostatOperatingStateGet()        // DOES NOTHING !
-    
-	//cmds << new hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelGet()
-    
-    
-    
 	sendToDevice(cmds)
 	if (lg) log.info "Refresh"    
 }
@@ -599,6 +596,20 @@ void installed() {
 	}
 	sendToDevice(cmds)
 }
+
+def setDeviceLimits() { // for google and amazon compatability
+    sendEvent(name:"minHeatingSetpoint", value: settings.tempMin ?: 8, unit: "°C", isStateChange: true, displayed: false)
+	sendEvent(name:"maxHeatingSetpoint", value: settings.tempMax ?: 28, unit: "°C", isStateChange: true, displayed: false)
+	log.trace "setDeviceLimits - device max/min set"
+}	
+
+
+def initialize() {
+    log.info "initialize..."
+    setDeviceLimits()
+    installed()
+}
+
 
 void sendToDevice(List<hubitat.zwave.Command> cmds, Long delay=1000) {
 	sendHubCommand(new hubitat.device.HubMultiAction(commands(cmds, delay), hubitat.device.Protocol.ZWAVE))

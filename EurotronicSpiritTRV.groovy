@@ -22,6 +22,7 @@
 * 1.1.0  2021-09-20 aelfot    latest aelfot version on GitHub
 * 2.0.0  2021-12-17 kkossev   English language option and translation;
 * 2.0.1  2021-12-17 kkossev   Added capabilities Refresh and Initialize; added forceStateChange option
+* 2.0.2  2021-12-17 kkossev   Added refreshRate
 *
 */
 
@@ -62,34 +63,44 @@ metadata {
 		windowDetectOptions << [2 : englishLang==true ? "Medium sensitivity" : "Empfindlichkeit mittel"]
 		windowDetectOptions << [3 : englishLang==true ? "High sensitivity" : "Empfindlichkeit hoch"]
 
+	def refreshRates = [:]
+	    refreshRates << ["0" : englishLang==true ? "Disabled - Set temperature, valve & battery reports, if required" : "Deaktiviert – Temperatur, Valve und Batterieberichte einstellen, falls erforderlich"]
+	    refreshRates << ["1" : englishLang==true ? "Refresh every minute (Not recommended)" : "Jede Minute aktualisieren (Nicht empfohlen)"]
+	    refreshRates << ["5" : englishLang==true ? "Refresh every 5 minutes" : "Alle 5 Minuten aktualisieren"]
+	    refreshRates << ["10" : englishLang==true ? "Refresh every 10 minutes" : "Alle 10 Minuten aktualisieren"]
+	    refreshRates << ["15" : englishLang==true ? "Refresh every 15 minutes" : "Alle 15 Minuten aktualisieren"]
+
+    
 	preferences {
 		input name:"englishLang",    	type:"bool",	title: "English Language",		    		description: "Default: No",					            defaultValue:false
         if (englishLang==true) {
-    		input name:"parameter1",	type:"bool",	title: "Invert LCD",				        description: "Default: No",					            defaultValue:false
-    		input name:"parameter2",	type:"number",	title: "LCD Timeout (in secs)",			    description: "Default: 0-Always on, range 0..30",       defaultValue:0,		range: "0..30"
-    		input name:"parameter3",	type:"bool",	title: "Backlight",			                description: "Default: Deactivated",			        defaultValue:false
-    		input name:"parameter4",	type:"enum",	title: "Battery reporting",				    description: "Default: once a day",			            defaultValue:1,		options: batteriestatus
-    		input name:"parameter5",	type:"number",	title: "Temperature reporting",	            description: "Default: 0.5° change, range 0.0..5.0",    defaultValue:0.5,	range: "0.0..5.0"
-    		input name:"parameter6",	type:"number",	title: "Valve reporting",		            description: "Default: Deactivated, range: 0..100",	    defaultValue:0,		range: "0..100"
-    		input name:"parameter7",	type:"enum",	title: "Window Open Detection",			    description: "Default: Medium sensitivity",	            defaultValue:2,		options: windowDetectOptions
-    		input name:"parameter8",	type:"number",	title: "Temperature offset",				description: "Default: no correction. range: -5.0..5.0",defaultValue:0,		range: "-5.0..5.0"
-    		input name:"parameter9",	type:"bool",	title: "Use external temperature sensor?",	description: "Default: No",						        defaultValue:false
-    		input name:"forceStateChange",type:"bool",	title: "Force State Change",	        	description: "Default: No (used for better graphs only)",defaultValue:false
-    		input name:"lg",			type:"bool",	title: "Debug Logging",			        	description: "Default: No",						        defaultValue:false
+    		input name: "parameter1",	type:"bool",	title: "Invert LCD",				        description: "Default: No",					            defaultValue:false
+    		input name: "parameter2",	type:"number",	title: "LCD Timeout (in secs)",			    description: "Default: 0-Always on, range 0..30",       defaultValue:0,		range: "0..30"
+    		input name: "parameter3",	type:"bool",	title: "Backlight",			                description: "Default: Deactivated",			        defaultValue:false
+    		input name: "parameter4",	type:"enum",	title: "Battery reporting",				    description: "Default: once a day",			            defaultValue:1,		options: batteriestatus
+    		input name: "parameter5",	type:"number",	title: "Temperature reporting",	            description: "Default: 0.5° change, range 0.0..5.0",    defaultValue:0.5,	range: "0.0..5.0"
+    		input name: "parameter6",	type:"number",	title: "Valve reporting",		            description: "Default: Deactivated, range: 0..100",	    defaultValue:0,		range: "0..100"
+    		input name: "parameter7",	type:"enum",	title: "Window Open Detection",			    description: "Default: Medium sensitivity",	            defaultValue:2,		options: windowDetectOptions
+    		input name: "parameter8",	type:"number",	title: "Temperature offset",				description: "Default: no correction. range: -5.0..5.0",defaultValue:0,		range: "-5.0..5.0"
+    		input name: "parameter9",	type:"bool",	title: "Use external temperature sensor?",	description: "Default: No",						        defaultValue:false
+    		input name: "forceStateChange",type:"bool",	title: "Force State Change",	        	description: "Default: No (used for better graphs only)",defaultValue:false
+    		input name: "refreshRate",  type: "enum",   title: "Refresh rate",                      description: "Select refresh rate",                     defaultValue: "0", required: false, options: refreshRates
+    		input name: "lg",			type:"bool",	title: "Debug Logging",			        	description: "Default: No",						        defaultValue:false
         }
         else
         {
-    		input name:"parameter1",	type:"bool",	title: "Display invertieren?",				description: "Default: Nein",					defaultValue:false
-    		input name:"parameter2",	type:"number",	title: "Display ausschalten nach",			description: "Default: Immer an(0)",			defaultValue:0,		range: "0..30"
-    		input name:"parameter3",	type:"bool",	title: "Hintergrundbeleuchtung",			description: "Default: Deaktiviert",			defaultValue:false
-    		input name:"parameter4",	type:"enum",	title: "Batteryabfrage",					description: "Default: 1 mal täglich",			defaultValue:1,		options: batteriestatus
-    		input name:"parameter5",	type:"number",	title: "Meldung bei Temperaturdifferenz",	description: "Default: bei Delta 0.5°", 		defaultValue:0.5,	range: "0.0..5.0"
-    		input name:"parameter6",	type:"number",	title: "Meldung bei Valvedifferenz",		description: "Default: Deaktiviert",			defaultValue:0,		range: "0..100"
-    		input name:"parameter7",	type:"enum",	title: "Fensteroffnungserkennung",			description: "Default: Empfindlichkeit mittel",	defaultValue:2,		options: windowDetectOptions
-    		input name:"parameter8",	type:"number",	title: "Temperature offset",				description: "Default: Keine Korrektur",		defaultValue:0,		range: "-5.0..5.0"
-    		input name:"parameter9",	type:"bool",	title: "Temperatur extern bereitgestellt?",	description: "Default: Nein",					defaultValue:false
-    		input name:"forceStateChange",type:"bool",	title: "Force State Change",	        	description: "Default: Nein (used for better graphs only)",defaultValue:false
-    		input name:"lg",			type:"bool",	title: "Logging on/off",					description: "",								defaultValue:false
+    		input name: "parameter1",	type:"bool",	title: "Display invertieren?",				description: "Default: Nein",					defaultValue:false
+    		input name: "parameter2",	type:"number",	title: "Display ausschalten nach",			description: "Default: Immer an(0)",			defaultValue:0,		range: "0..30"
+    		input name: "parameter3",	type:"bool",	title: "Hintergrundbeleuchtung",			description: "Default: Deaktiviert",			defaultValue:false
+    		input name: "parameter4",	type:"enum",	title: "Batteryabfrage",					description: "Default: 1 mal täglich",			defaultValue:1,		options: batteriestatus
+    		input name: "parameter5",	type:"number",	title: "Meldung bei Temperaturdifferenz",	description: "Default: bei Delta 0.5°", 		defaultValue:0.5,	range: "0.0..5.0"
+    		input name: "parameter6",	type:"number",	title: "Meldung bei Valvedifferenz",		description: "Default: Deaktiviert",			defaultValue:0,		range: "0..100"
+    		input name: "parameter7",	type:"enum",	title: "Fensteroffnungserkennung",			description: "Default: Empfindlichkeit mittel",	defaultValue:2,		options: windowDetectOptions
+    		input name: "parameter8",	type:"number",	title: "Temperature offset",				description: "Default: Keine Korrektur",		defaultValue:0,		range: "-5.0..5.0"
+    		input name: "parameter9",	type:"bool",	title: "Temperatur extern bereitgestellt?",	description: "Default: Nein",					defaultValue:false
+    		input name: "forceStateChange",type:"bool",	title: "Force State Change",	        	description: "Default: Nein (nur für bessere Grafiken verwendet)",defaultValue:false
+    		input name: "refreshRate",  type: "enum",   title: "Aktualisierungsrate",               description: "Default: Nein",                   defaultValue: "0", required: false, options: refreshRates
+    		input name: "lg",			type:"bool",	title: "Logging on/off",					description: "",								defaultValue:false
         }            
 	}
 }
@@ -537,7 +548,7 @@ void poll() {
 	cmds << new hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelGet()                // valve and simulated OperatingState 
 	cmds << new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)    // temperature
 	sendToDevice(cmds)
-	if (lg) log.info "Polling"
+	if (lg) log.info "Polling..."
 }
 
 void refresh() {
@@ -548,8 +559,37 @@ void refresh() {
 	cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x01)    // heatingSetpoint 
 	//cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x0B)    // coolingSetpoint - not needed!
 	sendToDevice(cmds)
-	if (lg) log.info "Refresh"    
+	if (lg) log.info "Refreshing..."    
 }
+
+void autoRefresh() {
+	unschedule(refresh)
+    if (refreshRate != null ) {
+        switch(refreshRate) {
+    	    case "1" :
+    		    runEvery1Minute(refresh)
+    			log.info "Refresh Scheduled for every minute"
+    			break
+    		case "15" :
+    			runEvery15Minutes(refresh)
+    			log.info "Refresh Scheduled for every 15 minutes"
+    			break
+    		case "10" :
+    			runEvery10Minutes(refresh)
+    			log.info "Refresh Scheduled for every 10 minutes"
+    			break
+    		case "5" :
+    			runEvery5Minutes(refresh)
+    			log.info "Refresh Scheduled for every 5 minutes"
+    			break
+    		case "0" :
+            default :
+       			unschedule(refresh)
+    			log.info "Auto Refresh off"
+        }
+    }
+}
+
 void updated() {
 	def cmds = []
 	cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:1,	size:1,	scaledConfigurationValue: parameter1 ? 0x01 : 0x00)
@@ -577,6 +617,7 @@ void updated() {
 		cmds << new hubitat.zwave.commands.configurationv1.ConfigurationGet(parameterNumber: i)
 	}
 	sendToDevice(cmds)
+    autoRefresh()
 }
 
 void installed() {
@@ -595,6 +636,7 @@ void installed() {
 		cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber: i, defaultValue: true)
 	}
 	sendToDevice(cmds)
+    autoRefresh()
 }
 
 def setDeviceLimits() { // for google and amazon compatability

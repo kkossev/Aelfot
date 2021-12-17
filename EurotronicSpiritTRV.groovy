@@ -1,9 +1,35 @@
+/*
+* Eurotronic Spirit TRV driver for Hubitat 
+*
+* Description:
+* 
+*
+* Information:
+* https://community.hubitat.com/t/eurotronic-air-quality-and-z-wave-spirit-in-association/79841
+*
+* Credits:  
+*
+* Licensing:
+* Copyright 2020-2021 Ravil Rubashkin
+* Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+* in compliance with the License. You may obtain a copy of the License at: http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+* on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+* for the specific language governing permissions and limitations under the License.
+*
+* Version Control:
+* 1.0.0  2021-02-06 aelfot    Initial version
+* 1.1.0  2021-09-20 aelfot    latest aelfot version on GitHub
+* 2.0.0  2021-12-17 kkossev   English language option and translation;
+*
+*/
+
 import groovy.transform.Field
 import hubitat.helper.HexUtils
 import hubitat.device.HubAction
 
 metadata {
-	definition (name: "Eurotronic Spirit TRV", namespace: "aelfot", author: "Ravil Rubashkin") {
+	definition (name: "Eurotronic Spirit TRV (aelfot KK mod)", namespace: "aelfot", author: "Ravil Rubashkin") {
 		capability "Battery"
 		capability "Lock"
 		capability "Thermostat"
@@ -24,26 +50,42 @@ metadata {
 		fingerprint  mfr:"0148", prod:"0003", deviceId:"0001", inClusters:"0x5E,0x55,0x98,0x9F"
 	}
 	def batteriestatus =  [:]
-		batteriestatus << [0 : "Eventgesteuert"]
-		batteriestatus << [1 : "1 Mal täglich"]
+		batteriestatus << [0 : englishLang==true ? "Event-driven" : "Eventgesteuert"]
+		batteriestatus << [1 : englishLang==true ? "Once per day" : "1 Mal täglich"]
 
 	def windowDetectOptions =  [:]
-		windowDetectOptions << [0 : "Deaktiviert"]
-		windowDetectOptions << [1 : "Empfindlichkeit niedrig"]
-		windowDetectOptions << [2 : "Empfindlichkeit mittel"]
-		windowDetectOptions << [3 : "Empfindlichkeit hoch"]
+		windowDetectOptions << [0 : englishLang==true ? "Deactivated" :"Deaktiviert"]
+		windowDetectOptions << [1 : englishLang==true ? "Low sensitivity" :"Empfindlichkeit niedrig"]
+		windowDetectOptions << [2 : englishLang==true ? "Medium sensitivity" :"Empfindlichkeit mittel"]
+		windowDetectOptions << [3 : englishLang==true ? "High sensitivity" :"Empfindlichkeit hoch"]
 
 	preferences {
-		input name:"parameter1",	type:"bool",	title: "Display invertieren?",				description: "Default: Nein",					defaultValue:false
-		input name:"parameter2",	type:"number",	title: "Display ausschalten nach",			description: "Default: Immer an(0)",			defaultValue:0,		range: "0..30"
-		input name:"parameter3",	type:"bool",	title: "Hintergrundbeleuchtung",			description: "Default: Deaktiviert",			defaultValue:false
-		input name:"parameter4",	type:"enum",	title: "Batteryabfrage",					description: "Default: 1 mal täglich",			defaultValue:1,		options: batteriestatus
-		input name:"parameter5",	type:"number",	title: "Meldung bei Temperaturdifferenz",	description: "Default: bei Delta 0.5°", 		defaultValue:0.5,	range: "0.0..5.0"
-		input name:"parameter6",	type:"number",	title: "Meldung bei Valvedifferenz",		description: "Default: Deaktiviert",			defaultValue:0,		range: "0..100"
-		input name:"parameter7",	type:"enum",	title: "Fensteroffnungserkennung",			description: "Default: Empfindlichkeit mittel",	defaultValue:2,		options: windowDetectOptions
-		input name:"parameter8",	type:"number",	title: "Temperature offset",				description: "Default: Keine Korrektur",		defaultValue:0,		range: "-5.0..5.0"
-		input name:"parameter9",	type:"bool",	title: "Temperatur extern bereitgestellt?",	description: "",								defaultValue:false
-		input name:"lg",			type:"bool",	title: "Logging on/off",					description: "",								defaultValue:false
+		input name:"englishLang",    	type:"bool",	title: "English Language",		    		description: "Default: No",					            defaultValue:false
+        if (englishLang==true) {
+    		input name:"parameter1",	type:"bool",	title: "Invert LCD",				        description: "Default: No",					            defaultValue:false
+    		input name:"parameter2",	type:"number",	title: "LCD Timeout (in secs)",			    description: "Default: 0-Always on, range 0..30",       defaultValue:0,		range: "0..30"
+    		input name:"parameter3",	type:"bool",	title: "Backlight",			                description: "Default: Deactivated",			        defaultValue:false
+    		input name:"parameter4",	type:"enum",	title: "Battery reporting",				    description: "Default: once a day",			            defaultValue:1,		options: batteriestatus
+    		input name:"parameter5",	type:"number",	title: "Temperature reporting",	            description: "Default: 0.5° change, range 0.0..5.0",    defaultValue:0.5,	range: "0.0..5.0"
+    		input name:"parameter6",	type:"number",	title: "Valve reporting",		            description: "Default: Deactivated, range: 0..100",	    defaultValue:0,		range: "0..100"
+    		input name:"parameter7",	type:"enum",	title: "Window Open Detection",			    description: "Default: Medium sensitivity",	            defaultValue:2,		options: windowDetectOptions
+    		input name:"parameter8",	type:"number",	title: "Temperature offset",				description: "Default: no correction. range: -5.0..5.0",defaultValue:0,		range: "-5.0..5.0"
+    		input name:"parameter9",	type:"bool",	title: "Use external temperature sensor?",	description: "Default: No",						        defaultValue:false
+    		input name:"lg",			type:"bool",	title: "Debug Logging",			        	description: "Default: No",						        defaultValue:false
+        }
+        else
+        {
+    		input name:"parameter1",	type:"bool",	title: "Display invertieren?",				description: "Default: Nein",					defaultValue:false
+    		input name:"parameter2",	type:"number",	title: "Display ausschalten nach",			description: "Default: Immer an(0)",			defaultValue:0,		range: "0..30"
+    		input name:"parameter3",	type:"bool",	title: "Hintergrundbeleuchtung",			description: "Default: Deaktiviert",			defaultValue:false
+    		input name:"parameter4",	type:"enum",	title: "Batteryabfrage",					description: "Default: 1 mal täglich",			defaultValue:1,		options: batteriestatus
+    		input name:"parameter5",	type:"number",	title: "Meldung bei Temperaturdifferenz",	description: "Default: bei Delta 0.5°", 		defaultValue:0.5,	range: "0.0..5.0"
+    		input name:"parameter6",	type:"number",	title: "Meldung bei Valvedifferenz",		description: "Default: Deaktiviert",			defaultValue:0,		range: "0..100"
+    		input name:"parameter7",	type:"enum",	title: "Fensteroffnungserkennung",			description: "Default: Empfindlichkeit mittel",	defaultValue:2,		options: windowDetectOptions
+    		input name:"parameter8",	type:"number",	title: "Temperature offset",				description: "Default: Keine Korrektur",		defaultValue:0,		range: "-5.0..5.0"
+    		input name:"parameter9",	type:"bool",	title: "Temperatur extern bereitgestellt?",	description: "",								defaultValue:false
+    		input name:"lg",			type:"bool",	title: "Logging on/off",					description: "",								defaultValue:false
+        }            
 	}
 }
 
@@ -84,11 +126,11 @@ void zwaveEvent (hubitat.zwave.commands.notificationv8.NotificationReport cmd) {
 	switch (cmd.notificationType) {
 		case 0x08:
 		if (cmd.event == 0x0A) {
-			resultat.value = "25% Batterie verbleibend"
+			resultat.value = englishLang==true ? "Less than 25% battery remaining" : "25% Batterie verbleibend"
 		} else if (cmd.event == 0x0B) {
-			resultat.value = "15% Batterie verbleibend"
+			resultat.value = englishLang==true ? "Less than 15% battery remaining" : "15% Batterie verbleibend"
 		} else {
-			resultat.value = "Batterie gewechselt"
+			resultat.value = englishLang==true ? "battery was changed" : "Batterie gewechselt"
 		}
 		break;
 		case 0x09:
@@ -96,25 +138,25 @@ void zwaveEvent (hubitat.zwave.commands.notificationv8.NotificationReport cmd) {
 			if (cmd.eventParametersLength != 0) {
 				switch (cmd.eventParameter[0]) {
 					case 0x01:
-					resultat.value = "Kein Schließpunkt gefunden"
-					break;
+					    resultat.value = englishLang==true ? "Motor movement not possible" : "Kein Schließpunkt gefunden"
+					    break;
 					case 0x02:
-					resultat.value = "Keine Ventilbewegung möglich"
-					break;
+					    resultat.value = englishLang==true ? "Not mounted on a valve" : "Keine Ventilbewegung möglich"
+					    break;
 					case 0x03:
-					resultat.value = "Kein Ventilschließpunkt gefunden"
-					break;
+					    resultat.value = englishLang==true ? "Valve closing point could not be detected" : "Kein Ventilschließpunkt gefunden"
+					    break;
 					case 0x04:
-					resultat.value = "Positionierung fehlgeschlagen"
-					break;
+					    resultat.value = englishLang==true ? "Piston positioning failed" : "Positionierung fehlgeschlagen"
+					    break;
 				}
 			} else {
-				resultat.value = "Der Fehler wurde gerade behoben"
+				resultat.value = englishLang==true ? "Valve problem was fixed" : "Der Fehler wurde gerade behoben"
 			}
 		}
 		break;
 	}
-	if (lg) log.info"Notifikaiton ist ${cmd}"
+	if (lg) log.info englishLang==true ? "Notifikaiton is ${cmd}" : "Notifikaiton ist ${cmd}"
 	sendEvent(resultat)
 }
 
@@ -129,12 +171,12 @@ void zwaveEvent (hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointR
 	if (cmd.setpointType == 0x0B) {
 		resultat.name = "coolingSetpoint"
 	}
-	if (lg) log.info "Thermostat hat den Report ${cmd}"
+	if (lg) log.info englishLang==true ? "Thermostat report ${cmd}" : "Thermostat hat den Report ${cmd}"
 	sendEvent(resultat)
 }
 
 void zwaveEvent (hubitat.zwave.commands.batteryv1.BatteryReport cmd) {
-	if (lg) log.info "batteryreport ist ${cmd}"
+	if (lg) log.info englishLang==true ? "Battery report ${cmd}" : "batteryreport ist ${cmd}"
 	sendEvent(name:"battery", value: cmd.batteryLevel, displayed: true)
 }
 
@@ -154,11 +196,11 @@ void zwaveEvent (hubitat.zwave.commands.protectionv1.ProtectionReport cmd) {
 		resultat.value = "locked"
 		break;
 		case 2:
-		resultat.value = "lokale Bedinung deaktiviert"
+		resultat.value = englishLang==true ? "No local operation possible" : "lokale Bedinung deaktiviert"
 		break;
 	}
 	if (resultat.value != null) {sendEvent(resultat)}
-	if (lg) log.info "protection report ist ${cmd}"
+	if (lg) log.info englishLang==true ? "protection report is ${cmd}" :"protection report ist ${cmd}"
 }
 
 void zwaveEvent (hubitat.zwave.commands.thermostatmodev3.ThermostatModeReport cmd) {
@@ -183,7 +225,7 @@ void zwaveEvent (hubitat.zwave.commands.thermostatmodev3.ThermostatModeReport cm
 		break;
 	}
 	sendEvent(resultat)
-	if (lg) log.info "thermostat hat den mode gemeldet ${cmd}"
+	if (lg) log.info englishLang==true ? "Thermostat reported mode ${cmd}" : "thermostat hat den mode gemeldet ${cmd}"
 }
 
 void zwaveEvent (hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport cmd) {
@@ -192,7 +234,7 @@ void zwaveEvent (hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelRepor
 	resultat.name = "temperature"
 	resultat.unit = cmd.scale == 1 ? "°F" : "°C"
 	resultat.displayed = true
-	if (lg) log.info "temperature ist ${cmd}"
+	if (lg) log.info englishLang==true ? "temperature is ${cmd}" : "temperature ist ${cmd}"
 	sendEvent(resultat)
 }
 
@@ -208,13 +250,13 @@ void zwaveEvent (hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelRepor
 	} else {
 		resultat.value = "heating"
 	}
-	if (lg) log.info "Valveposition is ${valvePosition}"
+	if (lg) log.info englishLang==true ? "Valve position is ${valvePosition}" : "Valveposition is ${valvePosition}"
 	sendEvent(name:"level", value: valvePosition)
 	sendEvent(resultat)
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd) {
-	log.debug "${device.displayName}: Unhandled: $cmd"
+	log.debug englishLang==true ? "${device.displayName}: Unhandled: $cmd" : "${device.displayName}: Unhandled: $cmd"
 }
 
 void off() {
@@ -261,77 +303,77 @@ void zwaveEvent (hubitat.zwave.commands.configurationv1.ConfigurationReport cmd)
 	switch (cmd.parameterNumber) {
 		case 1:
 		if ((parameter1 ? 0x01 : 0x00) != cmd.scaledConfigurationValue) {
-			if (lg) log.info "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
+			if (lg) log.info englishLang==true ? "Parameter number ${cmd.parameterNumber} was not set, trying again" : "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
 			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:1,	size:1,	scaledConfigurationValue: parameter1 ? 0x01 : 0x00)
 		} else {
-			if (lg) log.info "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
 		}
 		break;
 		case 2:
 		if (Math.round(parameter2).toInteger() != cmd.scaledConfigurationValue) {
-			if (lg) log.info "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
+			if (lg) log.info englishLang==true ? "Parameter number ${cmd.parameterNumber} was not set, trying again" : "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
 			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:2,	size:1,	scaledConfigurationValue: Math.round(parameter2).toInteger())
 		} else {
-			if (lg) log.info "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
 		}
 		break;
 		case 3:
 		if ((parameter3 ? 0x01 : 0x00) != cmd.scaledConfigurationValue) {
-			if (lg) log.info "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
+			if (lg) log.info englishLang==true ? "Parameter number ${cmd.parameterNumber} was not set, trying again" : "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
 			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:3,	size:1,	scaledConfigurationValue: parameter3 ? 0x01 : 0x00)
 		} else {
-			if (lg) log.info "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
 		}
 		break;
 		case 4:
 		if (parameter4.toInteger() != cmd.scaledConfigurationValue) {
-			if (lg) log.info "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
+			if (lg) log.info englishLang==true ? "Parameter number ${cmd.parameterNumber} was not set, trying again" : "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
 			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:4,	size:1,	scaledConfigurationValue: parameter4.toInteger())
 		} else {
-			if (lg) log.info "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
 		}
 		break;
 		case 5:
 		if (Math.round(parameter5.toFloat() * 10).toInteger() != cmd.scaledConfigurationValue) {
-			if (lg) log.info "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
+			if (lg) log.info englishLang==true ? "Parameter number ${cmd.parameterNumber} was not set, trying again" : "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
 			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:5,	size:1,	scaledConfigurationValue: Math.round(parameter5.toFloat() * 10).toInteger())
 		} else {
-			if (lg) log.info "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
 		}
 		break;
 		case 6:
 		if (Math.round(parameter6).toInteger() != cmd.scaledConfigurationValue) {
-			if (lg) log.info "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
+			if (lg) log.info englishLang==true ? "Parameter number ${cmd.parameterNumber} was not set, trying again" : "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
 			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:6,	size:1,	scaledConfigurationValue: Math.round(parameter6).toInteger())
 		} else {
-			if (lg) log.info "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
 		}
 		break;
 		case 7:
 		if (parameter7.toInteger() != cmd.scaledConfigurationValue) {
-			if (lg) log.info "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
+			if (lg) log.info englishLang==true ? "Parameter number ${cmd.parameterNumber} was not set, trying again" : "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
 			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:7,	size:1,	scaledConfigurationValue: parameter7.toInteger())
 		} else {
-			if (lg) log.info "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
 		}
 		break;
 		case 8:
 		if (parameter9) {
 			if (cmd.scaledConfigurationValue != -128) {
-				if (lg) log.info "Parameter nummer 9 hat den Wert nich übernommen, erneter Versuch"
+				if (lg) log.info englishLang==true ? "Parameter number 9 was not set, trying again" : "Parameter nummer 9 hat den Wert nich übernommen, erneter Versuch"
 				cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:8,	size:1,	scaledConfigurationValue: -128)
 			} else {
-				if (lg) log.info "Parameter nummer 8 hat den Wert erfolgreich übernommen"
-				if (lg) log.info "Parameter nummer 9 hat den Wert erfolgreich übernommen"
+				if (lg) log.info englishLang==true ? "Parameter number 8 was successfuly set" : "Parameter nummer 8 hat den Wert erfolgreich übernommen"
+				if (lg) log.info englishLang==true ? "Parameter number 9 was successfuly set" : "Parameter nummer 9 hat den Wert erfolgreich übernommen"
 				sendEvent (name: "ExterneTemperatur", value: "true")
 			}
 		} else  {
 			if (cmd.scaledConfigurationValue != Math.round(parameter8.toFloat() * 10).toInteger()) {
-				if (lg) log.info "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
+				if (lg) log.info englishLang==true ? "Parameter number ${cmd.parameterNumber} was not set, trying again" : "Parameter nummer ${cmd.parameterNumber} hat den Wert nich übernommen, erneter Versuch"
 				cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:8,	size:1,	scaledConfigurationValue: Math.round(parameter8.toFloat() * 10).toInteger())
 			} else {
-				if (lg) log.info "Parameter nummer 8 hat den Wert erfolgreich übernommen"
-				if (lg) log.info "Parameter nummer 9 hat den Wert erfolgreich übernommen"
+				if (lg) log.info englishLang==true ? "Parameter number 8 was successfuly set" : "Parameter nummer 8 hat den Wert erfolgreich übernommen"
+				if (lg) log.info englishLang==true ? "Parameter number 9 was successfuly set" : "Parameter nummer 9 hat den Wert erfolgreich übernommen"
 				sendEvent (name: "ExterneTemperatur", value: "false")
 			}
 		}
@@ -357,10 +399,10 @@ void setLevel(nextLevel) {
 		cmds << new hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelSet(value: val)
 		cmds << new hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelGet()
 		sendToDevice(cmds)
-		if (lg) log.info "Die Valve wird auf den Wert ${val} gestellt"
+		if (lg) log.info englishLang==true ? "Valve was set to ${val} %" : "Die Valve wird auf den Wert ${val} gestellt"
 	} else {
 		sendToDevice(new hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelGet())
-		if (lg) log.info "Eine Einstellung der Valveöffnung ist nur im manual modus möglich"
+		if (lg) log.info englishLang==true ? "Valve opening position can only be set in manual mode" : "Eine Einstellung der Valveöffnung ist nur im manual modus möglich"
 	}
 }
 
@@ -423,23 +465,23 @@ private getTemperature (setTemperature, modus) {
 void setThermostatMode(thermostatmode) {
 	switch (thermostatmode) {
 		case "emergency heat":
-		emergencyHeat()
-		break;
+		    emergencyHeat()
+		    break;
 		case "cool":
-		cool()
-		break;
+		    cool()
+		    break;
 		case "heat":
-        heat()
-		break;
+            heat()
+		    break;
         case "off":
-		off()
-		break;
+		    off()
+		    break;
 		case "auto":
-		auto()
-		break;
+		    auto()
+		    break;
 		case "manual":
-		manual()
-		break;
+		    manual()
+		    break;
 	}
 }
 
@@ -475,25 +517,25 @@ void poll() {
 void updated() {
 	def cmds = []
 	cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:1,	size:1,	scaledConfigurationValue: parameter1 ? 0x01 : 0x00)
-	if (lg) log.info "Parameter 1 hat den Wert ${parameter1 ? 0x01 : 0x00} übermittelt bekommen"
+	if (lg) log.info englishLang==true ? "Parameter 1 will be set to ${parameter1 ? 0x01 : 0x00}" : "Parameter 1 hat den Wert ${parameter1 ? 0x01 : 0x00} übermittelt bekommen"
 	cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:2,	size:1,	scaledConfigurationValue: Math.round(parameter2.toFloat()).toInteger())
-	if (lg) log.info "Parameter 2 hat den Wert ${Math.round(parameter2.toFloat()).toInteger()} übermittelt bekommen"
+	if (lg) log.info englishLang==true ? "Parameter 2 will be set to ${Math.round(parameter2.toFloat()).toInteger()}" : "Parameter 2 hat den Wert ${Math.round(parameter2.toFloat()).toInteger()} übermittelt bekommen"
 	cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:3,	size:1,	scaledConfigurationValue: parameter3 ? 0x01 : 0x00)
-	if (lg) log.info "Parameter 3 hat den Wert ${parameter3 ? 0x01 : 0x00} übermittelt bekommen"
+	if (lg) log.info englishLang==true ? "Parameter 3 will be set to ${parameter3 ? 0x01 : 0x00}" : "Parameter 3 hat den Wert ${parameter3 ? 0x01 : 0x00} übermittelt bekommen"
 	cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:4,	size:1,	scaledConfigurationValue: parameter4.toInteger())
-	if (lg) log.info "Parameter 4 hat den Wert ${parameter4.toInteger()} übermittelt bekommen"
+	if (lg) log.info englishLang==true ? "Parameter 4 will be set to ${parameter4.toInteger()}" : "Parameter 4 hat den Wert ${parameter4.toInteger()} übermittelt bekommen"
 	cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:5,	size:1,	scaledConfigurationValue: Math.round(parameter5.toFloat() * 10).toInteger())
-	if (lg) log.info "Parameter 5 hat den Wert ${Math.round(parameter5.toFloat() * 10).toInteger()} übermittelt bekommen"
+	if (lg) log.info englishLang==true ? "Parameter 5 will be set to ${Math.round(parameter5.toFloat() * 10).toInteger()}" : "Parameter 5 hat den Wert ${Math.round(parameter5.toFloat() * 10).toInteger()} übermittelt bekommen"
 	cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:6,	size:1,	scaledConfigurationValue: Math.round(parameter6.toFloat()).toInteger())
-	if (lg) log.info "Parameter 6 hat den Wert ${Math.round(parameter6.toFloat()).toInteger()} übermittelt bekommen"
+	if (lg) log.info englishLang==true ? "Parameter 6 will be set to ${Math.round(parameter6.toFloat()).toInteger()}" : "Parameter 6 hat den Wert ${Math.round(parameter6.toFloat()).toInteger()} übermittelt bekommen"
 	cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:7,	size:1,	scaledConfigurationValue: parameter7.toInteger())
-	if (lg) log.info "Parameter 7 hat den Wert ${parameter7.toInteger()} übermittelt bekommen"
+	if (lg) log.info englishLang==true ? "Parameter 7 will be set to ${parameter7.toInteger()}" : "Parameter 7 hat den Wert ${parameter7.toInteger()} übermittelt bekommen"
 	if (parameter9) {
 		cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:8,	size:1,	scaledConfigurationValue: -128)
-		if (lg) log.info "Parameter 8 hat den Wert -128 übermittelt bekommen"
+		if (lg) log.info englishLang==true ? "Parameter 8 will be set to -128" : "Parameter 8 hat den Wert -128 übermittelt bekommen"
 	} else {
 		cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:8,	size:1,	scaledConfigurationValue: Math.round(parameter8.toFloat() * 10).toInteger())
-		if (lg) log.info "Parameter 8 hat den Wert ${Math.round(parameter8.toFloat() * 10).toInteger()} übermittelt bekommen"
+		if (lg) log.info englishLang==true ? "Parameter 8 will be set to ${Math.round(parameter8.toFloat() * 10).toInteger()}" : "Parameter 8 hat den Wert ${Math.round(parameter8.toFloat() * 10).toInteger()} übermittelt bekommen"
 	}
 	for (int i=1 ; i<=8 ; i++) {
 		cmds << new hubitat.zwave.commands.configurationv1.ConfigurationGet(parameterNumber: i)

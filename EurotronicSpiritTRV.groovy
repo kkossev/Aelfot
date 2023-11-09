@@ -25,6 +25,8 @@
 * 2.0.2  2021-12-17 kkossev   Added refreshRate
 * 2.0.3  2021-12-18 kkossev   Added calibrate function
 * 2.0.4  2021-12-18 kkossev   calibrate optimization
+* 2.0.5  2022-12-16 kkossev   SwitchLevel capability removed
+* 2.1.0  2022-12-16 kkossev   (dev. branch)
 *
 */
 
@@ -33,15 +35,15 @@ import hubitat.helper.HexUtils
 import hubitat.device.HubAction
 
 metadata {
-	definition (name: "Eurotronic Spirit TRV (aelfot KK mod)", namespace: "aelfot", author: "Ravil Rubashkin") {
+	definition (name: "Eurotronic Spirit TRV", namespace: "aelfot", author: "Ravil Rubashkin") {
 		capability "Battery"
-		capability "Lock"
+		//capability "Lock"
 		capability "Thermostat"
 		capability "Actuator"
 		capability "Sensor"
 		capability "TemperatureMeasurement"
 		capability "Polling"
-		capability "SwitchLevel"
+		//capability "SwitchLevel"
         capability "Refresh"
         capability "Initialize"
 
@@ -54,9 +56,10 @@ metadata {
         command "disableLocalOperations"    //"lokaleBedinungDeaktiviert"
         command "calibrate"
 
-
-		fingerprint  mfr:"0148", prod:"0003", deviceId:"0001", inClusters:"0x5E,0x55,0x98,0x9F"
+		fingerprint mfr:"0148", prod:"0003", deviceId:"0001", inClusters:"0x5E,0x55,0x98,0x9F"
+        fingerprint mfr:"0148", prod:"0003", deviceId:"0001", inClusters:"0x5E,0x85,0x59,0x86,0x72,0x5A,0x75,0x31,0x26,0x40,0x43,0x80,0x70,0x71,0x73,0x98,0x9F,0x55,0x6C,0x7A"
 	}
+	
 	def batteriestatus =  [:]
 		batteriestatus << [0 : englishLang==true ? "Event-driven" : "Eventgesteuert"]
 		batteriestatus << [1 : englishLang==true ? "Once per day" : "1 Mal täglich"]
@@ -74,7 +77,6 @@ metadata {
 	    refreshRates << ["10" : englishLang==true ? "Refresh every 10 minutes" : "Alle 10 Minuten aktualisieren"]
 	    refreshRates << ["15" : englishLang==true ? "Refresh every 15 minutes" : "Alle 15 Minuten aktualisieren"]
 
-    
 	preferences {
 		input name:"englishLang",    	type:"bool",	title: "English Language",		    		description: "Default: No",					            defaultValue:false
         if (englishLang==true) {
@@ -206,6 +208,13 @@ void zwaveEvent (hubitat.zwave.commands.batteryv1.BatteryReport cmd) {
 void zwaveEvent(hubitat.zwave.commands.deviceresetlocallyv1.DeviceResetLocallyNotification cmd) {
     if (lg) log.warn englishLang==true ? "Device Reset Locally" : "Device Reset Locally"
 	sendEvent(name:"DeviceResetLocally", value: true, displayed = true, isStateChange: true)
+	sendEvent(name:"Notifity", value:"Deleted")
+	sendEvent(name:"thermostatMode", value:"off")
+	sendEvent(name:"level", value:0)
+	sendEvent(name:"temperature", value:0)
+	sendEvent(name:"thermostatOperatingState", value: "idle")
+	sendEvent(name:"coolingSetpoint", value:0)
+	sendEvent(name:"heatingSetpoint", value:0)
 }
 
 void zwaveEvent (hubitat.zwave.commands.protectionv1.ProtectionReport cmd) {
@@ -253,6 +262,7 @@ void zwaveEvent (hubitat.zwave.commands.thermostatmodev3.ThermostatModeReport cm
 	}
     if (forceStateChange==true) {resultat.isStateChange = true}
 	sendEvent(resultat)
+	if (parameter6 == 0) { sendToDevice (new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)) }
 	if (lg) log.info englishLang==true ? "Thermostat reported mode is ${resultat.value}" : "thermostat hat den mode gemeldet ${resultat.value}"
 }
 
@@ -263,8 +273,42 @@ void zwaveEvent (hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelRepor
 	resultat.unit = cmd.scale == 1 ? "°F" : "°C"
 	resultat.displayed = true
     if (lg) log.info englishLang==true ? "temperature is ${resultat.value} ${resultat.unit}" : "temperature ist ${resultat.value} ${resultat.unit}"
-    if (forceStateChange==true) {resultat.isStateChange = true}
-	sendEvent(resultat)
+	if (parameter6 == 0) {
+		def operatingstate = [:]
+		operatingstate.name = "thermostatOperatingState"
+		operatingstate.displayed = true
+		switch (device.currentValue("thermostatMode")) {
+			case "off":
+			    operatingstate.value = "idle"
+			    break;
+			case "heat":			
+			    if (cmd.scaledSensorValue < device.currentValue("heatingSetpoint").toFloat()) {
+				    operatingstate.value = "heating"
+			    } else if (cmd.scaledSensorValue > device.currentValue("heatingSetpoint").toFloat()) {
+				    operatingstate.value = "cooling"
+			    } else {
+				    operatingstate.value = "idle"
+			    }
+			    break;
+			case "cool":				
+			    if (cmd.scaledSensorValue < device.currentValue("coolingSetpoint").toFloat()) {
+				    operatingstate.value = "heating"
+			    } else if (cmd.scaledSensorValue > device.currentValue("coolingSetpoint").toFloat()) {
+				    operatingstate.value = "cooling"
+			    } else {
+				    operatingstate.value = "idle"
+			    }
+			    break;
+			case "emergency heat":
+			    operatingstate.value = "pending heat"
+			    break;
+			case "manual":
+			    operatingstate.value = "vent economizer"
+			    break;
+		}
+		sendEvent(operatingstate)
+	}
+	sendEvent(resultat)	
 }
 
 void thermostatLevelAndOperatingStateEvents (valvePos)
@@ -354,6 +398,7 @@ void zwaveEvent (hubitat.zwave.commands.configurationv1.ConfigurationReport cmd)
     			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:2,	size:1,	scaledConfigurationValue: Math.round(parameter2).toInteger())
     		} else {
     			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+            	state.parameter2 = parameter2
     		}
     		break;
 		case 3:
@@ -362,6 +407,7 @@ void zwaveEvent (hubitat.zwave.commands.configurationv1.ConfigurationReport cmd)
     			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:3,	size:1,	scaledConfigurationValue: parameter3 ? 0x01 : 0x00)
     		} else {
     			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+				state.parameter3 = parameter3
     		}
     		break;
 		case 4:
@@ -370,6 +416,7 @@ void zwaveEvent (hubitat.zwave.commands.configurationv1.ConfigurationReport cmd)
     			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:4,	size:1,	scaledConfigurationValue: parameter4.toInteger())
     		} else {
     			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+            	state.parameter4 = parameter4    			
     		}
     		break;
 		case 5:
@@ -378,6 +425,7 @@ void zwaveEvent (hubitat.zwave.commands.configurationv1.ConfigurationReport cmd)
     			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:5,	size:1,	scaledConfigurationValue: Math.round(parameter5.toFloat() * 10).toInteger())
     		} else {
     			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+    			state.parameter5 = parameter5
     		}
     		break;
 		case 6:
@@ -386,6 +434,7 @@ void zwaveEvent (hubitat.zwave.commands.configurationv1.ConfigurationReport cmd)
     			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:6,	size:1,	scaledConfigurationValue: Math.round(parameter6).toInteger())
     		} else {
     			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+    			state.parameter6 = parameter6
     		}
     		break;
 		case 7:
@@ -394,6 +443,7 @@ void zwaveEvent (hubitat.zwave.commands.configurationv1.ConfigurationReport cmd)
     			cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:7,	size:1,	scaledConfigurationValue: parameter7.toInteger())
     		} else {
     			if (lg) log.info englishLang==true ? "Parameter number  ${cmd.parameterNumber} was successfuly set" : "Parameter nummer  ${cmd.parameterNumber} hat den Wert erfolgreich übernommen"
+    			state.parameter7 = parameter7
     		}
     		break;
 		case 8:
@@ -404,6 +454,8 @@ void zwaveEvent (hubitat.zwave.commands.configurationv1.ConfigurationReport cmd)
     			} else {
     				if (lg) log.info englishLang==true ? "Parameter number 8 was successfuly set" : "Parameter nummer 8 hat den Wert erfolgreich übernommen"
     				if (lg) log.info englishLang==true ? "Parameter number 9 was successfuly set" : "Parameter nummer 9 hat den Wert erfolgreich übernommen"
+    				state.parameter8 = parameter8
+					state.parameter9 = parameter9
     				sendEvent (name: "ExterneTemperatur", value: "true")
     			}
     		} else  {
@@ -413,6 +465,8 @@ void zwaveEvent (hubitat.zwave.commands.configurationv1.ConfigurationReport cmd)
     			} else {
     				if (lg) log.info englishLang==true ? "Parameter number 8 was successfuly set" : "Parameter nummer 8 hat den Wert erfolgreich übernommen"
     				if (lg) log.info englishLang==true ? "Parameter number 9 was successfuly set" : "Parameter nummer 9 hat den Wert erfolgreich übernommen"
+                	state.parameter8 = parameter8
+					state.parameter9 = parameter9    				
     				sendEvent (name: "ExterneTemperatur", value: "false")
     			}
     		}
@@ -447,7 +501,7 @@ void setLevel(nextLevel) {
 
 void setCoolingSetpoint(temperature) {
 	def nextTemperature = getTemperature (temperature,"cool")
-	sendEvent(name: "coolingSetpoint", value: nextTemperature.toFloat(), displayed: true)
+	sendEvent(name: "coolingSetpoint", value: nextTemperature.toFloat(), displayed: true,  unit: "°" + getTemperatureScale())
 	def cmds = []
 	cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointSet(precision:1, scale:0, scaledValue: nextTemperature, setpointType: 0x0B)
 	cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x0B)
@@ -456,7 +510,7 @@ void setCoolingSetpoint(temperature) {
 
 void setHeatingSetpoint(temperature) {
 	def nextTemperature = getTemperature (temperature,"heat")
-	sendEvent(name: "heatingSetpoint", value: nextTemperature.toFloat(), displayed: true, unit: cmd.scale == 1 ? "°F" : "°C")
+	sendEvent(name: "heatingSetpoint", value: nextTemperature.toFloat(), displayed: true, unit: "°" + getTemperatureScale())
 	def cmds = []
 	cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointSet(precision:1, scale:0, scaledValue: nextTemperature, setpointType: 0x01)
 	cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x01)
@@ -549,52 +603,57 @@ void lokaleBedinungDeaktiviert () {
 	sendToDevice(cmds)
 }
 
-void poll() {
-	def cmds = []
-	cmds << new hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelGet()                // valve and simulated OperatingState 
-	cmds << new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)    // temperature
-	sendToDevice(cmds)
-	if (lg) log.info "Polling..."
-}
-
-void refresh() {
-	def cmds = []
-	cmds << new hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelGet()                // valve and simulated OperatingState 
-	cmds << new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)    // temperature
-    cmds << new hubitat.zwave.commands.thermostatmodev3.ThermostatModeGet()                    // operation mode (heat, cool, ...)
-	cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x01)    // heatingSetpoint 
-	//cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x0B)    // coolingSetpoint - not needed!
-	sendToDevice(cmds)
-	if (lg) log.info "Refreshing..."    
-}
-
-void autoRefresh() {
-	unschedule(refresh)
-    if (refreshRate != null ) {
-        switch(refreshRate) {
-    	    case "1" :
-    		    runEvery1Minute(refresh)
-    			log.info "Refresh Scheduled for every minute"
-    			break
-    		case "15" :
-    			runEvery15Minutes(refresh)
-    			log.info "Refresh Scheduled for every 15 minutes"
-    			break
-    		case "10" :
-    			runEvery10Minutes(refresh)
-    			log.info "Refresh Scheduled for every 10 minutes"
-    			break
-    		case "5" :
-    			runEvery5Minutes(refresh)
-    			log.info "Refresh Scheduled for every 5 minutes"
-    			break
-    		case "0" :
-            default :
-       			unschedule(refresh)
-    			log.info "Auto Refresh off"
-        }
+void sendConfigurationCommand (List<Integer> zuErneuerndeParametern) {
+    def cmds = []
+    if (zuErneuerndeParametern) {
+    zuErneuerndeParametern.each { k ->
+    	switch (k) {
+        	case 1:
+				cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:k,	size:1,	scaledConfigurationValue: parameter1 ? 0x01 : 0x00)
+				if (lg) log.info "Parameter 1 hat den Wert ${parameter1 ? 0x01 : 0x00} übermittelt bekommen"
+			break;
+			case 2:
+				cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:k,	size:1,	scaledConfigurationValue: Math.round(parameter2.toFloat()).toInteger())
+				if (lg) log.info "Parameter 2 hat den Wert ${Math.round(parameter2.toFloat()).toInteger()} übermittelt bekommen"
+			break;
+			case 3:
+				cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:k,	size:1,	scaledConfigurationValue: parameter3 ? 0x01 : 0x00)
+				if (lg) log.info "Parameter 3 hat den Wert ${parameter3 ? 0x01 : 0x00} übermittelt bekommen"
+			break;
+			case 4:
+				cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:k,	size:1,	scaledConfigurationValue: parameter4.toInteger())
+				if (lg) log.info "Parameter 4 hat den Wert ${parameter4.toInteger()} übermittelt bekommen"
+			break;
+			case 5:
+				cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:k,	size:1,	scaledConfigurationValue: Math.round(parameter5.toFloat() * 10).toInteger())
+				if (lg) log.info "Parameter 5 hat den Wert ${Math.round(parameter5.toFloat() * 10).toInteger()} übermittelt bekommen"
+			break;
+			case 6:
+				cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:k,	size:1,	scaledConfigurationValue: Math.round(parameter6.toFloat()).toInteger())
+				if (lg) log.info "Parameter 6 hat den Wert ${Math.round(parameter6.toFloat()).toInteger()} übermittelt bekommen"
+			break;
+			case 7:
+				cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:k,	size:1,	scaledConfigurationValue: parameter7.toInteger())
+				if (lg) log.info "Parameter 7 hat den Wert ${parameter7.toInteger()} übermittelt bekommen"
+			break;
+			case 8:
+				if (parameter9) {
+					cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:8,	size:1,	scaledConfigurationValue: -128)
+					if (lg) log.info "Parameter 8 hat den Wert -128 übermittelt bekommen"
+				} else {
+					cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:8,	size:1,	scaledConfigurationValue: Math.round(parameter8.toFloat() * 10).toInteger())
+					if (lg) log.info "Parameter 8 hat den Wert ${Math.round(parameter8.toFloat() * 10).toInteger()} übermittelt bekommen"
+				}            
+			break;
+			default:
+				if (lg) log.debug "Falsche Parameternummer für Configuration gesandt"
+    	}
+		cmds << new hubitat.zwave.commands.configurationv1.ConfigurationGet(parameterNumber:k)
+    }
+    sendToDevice(cmds)
     }
 }
+
 
 // Constants
 @Field static final Integer CALIBRATE_IDLE                    = 0
@@ -723,6 +782,7 @@ void updated() {
 }
 
 void installed() {
+	log.info "Device ${device.label?device.label:device.name} is installed"
 	sendEvent(name:"Notifity",						value:"Installed", displayed: true)
 	sendEvent(name:"DeviceResetLocally",			value:false, displayed: true)
 	sendEvent(name:"supportedThermostatFanModes", 	value: ["circulate"], displayed: true)
@@ -736,10 +796,9 @@ void installed() {
 	cmds << new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)
 	for (int i=1 ; i<=8 ; i++) {
 		cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber: i, defaultValue: true)
+		log.info "Parameter nummer ${i} ist zurückgesetzt"
 	}
 	sendToDevice(cmds)
-    autoRefresh()
-    unschedule(calibrateStateMachine)
 }
 
 def setDeviceLimits() { // for google and amazon compatability
@@ -769,6 +828,8 @@ List<String> commands(List<hubitat.zwave.Command> cmds, Long delay=1000) {
 }
 
 void fanOn() {
+	sendToDevice (new hubitat.zwave.commands.batteryv1.BatteryGet())
+	if (lg) log.info "Battery wird abgefragt"
 }
 
 void auto() {
@@ -777,15 +838,63 @@ void auto() {
 void fanAuto() {
 }
 
-void fanCirculate() {	
+void fanCirculate() {
+	sendEvent(name: "thermostatFanMode", value: "circulate", displayed: true)
 }
 
 void setThermostatFanMode(fanmode) {
 	sendEvent(name: "thermostatFanMode", value: "circulate", displayed: true)
 }
 
-void SendTemperature(temperature) {
+void ExternalSensorTemperature(temperature) {
 	def Integer x = Math.round(temperature * 100) % 256
 	def Integer y = (Math.round(temperature * 100) - x) / 256	
 	sendToDevice(new hubitat.zwave.commands.sensormultilevelv10.SensorMultilevelReport(precision:2,scale:0,sensorType:1,sensorValue:[y,x],size:2,scaledSensorValue:(Math.round(temperature * 100)/100).toBigDecimal()))
+}
+
+void poll() {
+	def cmds = []
+	cmds << new hubitat.zwave.commands.batteryv1.BatteryGet()
+	cmds << new hubitat.zwave.commands.thermostatmodev3.ThermostatModeGet()
+	cmds << new hubitat.zwave.commands.switchmultilevelv1.SwitchMultilevelGet()
+	sendToDevice(cmds)
+}
+
+void refresh() {
+	def cmds = []
+	cmds << new hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelGet()                // valve and simulated OperatingState 
+	cmds << new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)    // temperature
+    cmds << new hubitat.zwave.commands.thermostatmodev3.ThermostatModeGet()                    // operation mode (heat, cool, ...)
+	cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x01)    // heatingSetpoint 
+	//cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x0B)    // coolingSetpoint - not needed!
+	sendToDevice(cmds)
+	if (lg) log.info "Refreshing..."    
+}
+
+void autoRefresh() {
+	unschedule(refresh)
+    if (refreshRate != null ) {
+        switch(refreshRate) {
+    	    case "1" :
+    		    runEvery1Minute(refresh)
+    			log.info "Refresh Scheduled for every minute"
+    			break
+    		case "15" :
+    			runEvery15Minutes(refresh)
+    			log.info "Refresh Scheduled for every 15 minutes"
+    			break
+    		case "10" :
+    			runEvery10Minutes(refresh)
+    			log.info "Refresh Scheduled for every 10 minutes"
+    			break
+    		case "5" :
+    			runEvery5Minutes(refresh)
+    			log.info "Refresh Scheduled for every 5 minutes"
+    			break
+    		case "0" :
+            default :
+       			unschedule(refresh)
+    			log.info "Auto Refresh off"
+        }
+    }
 }

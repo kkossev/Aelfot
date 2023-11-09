@@ -1,0 +1,129 @@
+
+Details Display
+Home-dev
+settings
+ Eurotronic Spirit TRV
+ID: 4225 
+
+Type:  Eurotronic Spirit Thermostat
+
+Capabilities: [Configuration, Actuator, Refresh, Battery, Initialize, SwitchLevel, TemperatureMeasurement, Thermostat]
+
+Attributes:[coolingSetpoint, temperature, temperature, level, thermostatMode, heatingSetpoint, supportedThermostatModes, thermostatSetpoint, thermostatFanMode, thermostatOperatingState, supportedThermostatFanModes, battery]
+
+
+====================================================
+
+Current Values:
+coolingSetpoint (NUMBER): null  
+	Last State Change N/A
+temperature (NUMBER): 24.08  
+	Last State Change 
+		Activity Timestamp: Thu Nov 09 15:14:52 EET 2023
+		Event Desc: [dataType=NUMBER, date=Thu Nov 09 15:14:52 EET 2023, deviceId=4225, id=, name=temperature, unit=°C, value=24.08]
+		Unit:name=temperature
+temperature (NUMBER): 24.08  
+	Last State Change 
+		Activity Timestamp: Thu Nov 09 15:14:52 EET 2023
+		Event Desc: [dataType=NUMBER, date=Thu Nov 09 15:14:52 EET 2023, deviceId=4225, id=, name=temperature, unit=°C, value=24.08]
+		Unit:name=temperature
+level (NUMBER): 0  
+	Last State Change 
+		Activity Timestamp: Thu Nov 09 14:51:49 EET 2023
+		Event Desc: [dataType=NUMBER, date=Thu Nov 09 14:51:49 EET 2023, deviceId=4225, id=, name=level, unit=%, value=0]
+		Unit:name=level
+thermostatMode (ENUM): heat  
+	Last State Change 
+		Activity Timestamp: Thu Nov 09 14:55:35 EET 2023
+		Event Desc: [dataType=ENUM, date=Thu Nov 09 14:55:35 EET 2023, deviceId=4225, id=, name=thermostatMode, unit=, value=heat]
+		Unit:name=thermostatMode
+heatingSetpoint (NUMBER): 18.5  
+	Last State Change 
+		Activity Timestamp: Thu Nov 09 14:59:08 EET 2023
+		Event Desc: [dataType=NUMBER, date=Thu Nov 09 14:59:08 EET 2023, deviceId=4225, id=, name=heatingSetpoint, unit=°C, value=18.5]
+		Unit:name=heatingSetpoint
+supportedThermostatModes (JSON_OBJECT): ["off","heat","energy save heat"]  
+	Last State Change 
+		Activity Timestamp: Thu Nov 09 14:51:47 EET 2023
+		Event Desc: [dataType=JSON_OBJECT, date=Thu Nov 09 14:51:47 EET 2023, deviceId=4225, id=, name=supportedThermostatModes, unit=, value=["off", "heat", "energy save heat"]]
+		Unit:name=supportedThermostatModes
+thermostatSetpoint (NUMBER): null  
+	Last State Change N/A
+thermostatFanMode (ENUM): null  
+	Last State Change N/A
+thermostatOperatingState (ENUM): idle  
+	Last State Change 
+		Activity Timestamp: Thu Nov 09 14:51:49 EET 2023
+		Event Desc: [dataType=ENUM, date=Thu Nov 09 14:51:49 EET 2023, deviceId=4225, id=, name=thermostatOperatingState, unit=, value=idle]
+		Unit:name=thermostatOperatingState
+supportedThermostatFanModes (JSON_OBJECT): []  
+	Last State Change 
+		Activity Timestamp: Thu Nov 09 14:51:47 EET 2023
+		Event Desc: [dataType=JSON_OBJECT, date=Thu Nov 09 14:51:47 EET 2023, deviceId=4225, id=, name=supportedThermostatFanModes, unit=, value=[]]
+		Unit:name=supportedThermostatFanModes
+battery (NUMBER): 90  
+	Last State Change 
+		Activity Timestamp: Thu Nov 09 14:59:45 EET 2023
+		Event Desc: [dataType=NUMBER, date=Thu Nov 09 14:59:45 EET 2023, deviceId=4225, id=, name=battery, unit=%, value=90]
+		Unit:name=battery
+		
+		
+		============================================================
+		
+Commands:[auto, configure, cool, emergencyHeat, fanAuto, fanCirculate, fanOn, heat, initialize, off, refresh, setCoolingSetpoint, setHeatingSetpoint, setLevel, setThermostatFanMode, setThermostatMode]
+ 
+auto(null)
+configure(null)
+cool(null)
+emergencyHeat(null)
+fanAuto(null)
+fanCirculate(null)
+fanOn(null)
+heat(null)
+initialize(null)
+off(null)
+refresh(null)
+setCoolingSetpoint([[name:Temperature*, description:Cooling setpoint in degrees, type:NUMBER, constraints:[NUMBER]]])
+setHeatingSetpoint([[name:Temperature*, description:Heating setpoint in degrees, type:NUMBER, constraints:[NUMBER]]])
+setLevel([[name:Level*, description:Level to set (0 to 100), type:NUMBER, constraints:[NUMBER]], [name:Duration, description:Transition duration in seconds, type:NUMBER, constraints:[NUMBER]]])
+setThermostatFanMode([[name:Fan mode*, description:Fan mode to set, type:ENUM, constraints:[on, circulate, auto]]])
+setThermostatMode([[name:Thermostat mode*, description:Thermostat mode to set, type:ENUM, constraints:[auto, off, heat, emergency heat, cool]]]) 
+
+=====================================================================================
+
+
+Device Data: [deviceType:3, deviceId:1, inClusters:0x5E,0x85,0x59,0x86,0x72,0x5A,0x75,0x31,0x26,0x40,0x43,0x80,0x70,0x71,0x73,0x98,0x9F,0x55,0x6C,0x7A, manufacturer:328]
+currentStates=[com.hubitat.hub.domain.State@70127c[dataType=NUMBER,date=Thu Nov 09 14:59:08 EET 2023,deviceId=4225,id=,name=heatingSetpoint,unit=°C,value=18.5], com.hubitat.hub.domain.State@10b250[dataType=NUMBER,date=Thu Nov 09 14:51:49 EET 2023,deviceId=4225,id=,name=level,unit=%,value=0], com.hubitat.hub.domain.State@4b55c9[dataType=ENUM,date=Thu Nov 09 14:51:49 EET 2023,deviceId=4225,id=,name=thermostatOperatingState,unit=,value=idle], com.hubitat.hub.domain.State@137f93[dataType=NUMBER,date=Thu Nov 09 15:14:52 EET 2023,deviceId=4225,id=,name=temperature,unit=°C,value=24.08], com.hubitat.hub.domain.State@f67ddf[dataType=ENUM,date=Thu Nov 09 14:55:35 EET 2023,deviceId=4225,id=,name=thermostatMode,unit=,value=heat], com.hubitat.hub.domain.State@145dea3[dataType=NUMBER,date=Thu Nov 09 14:59:45 EET 2023,deviceId=4225,id=,name=battery,unit=%,value=90], com.hubitat.hub.domain.State@1c0335f[dataType=JSON_OBJECT,date=Thu Nov 09 14:51:47 EET 2023,deviceId=4225,id=,name=supportedThermostatModes,unit=,value=["off","heat","energy save heat"]], com.hubitat.hub.domain.State@2a2213[dataType=JSON_OBJECT,date=Thu Nov 09 14:51:47 EET 2023,deviceId=4225,id=,name=supportedThermostatFanModes,unit=,value=[]]]
+driverId=346
+isComponent=false
+zigbeeId=null
+roomName=TestRoom
+hub=Home-dev
+id=4225
+unwrappedDevice=[id: 4225, name: Eurotronic Spirit Thermostat, label:  Eurotronic Spirit TRV, deviceNetworkId: 06, hubId: 1, parentDeviceId: null, isComponent: null, displayAsChild: null, locationId: 1, deviceTypeId: 346, zigbeeId: null, lanId: null, driverType: sys, linkedDevice: false]
+supportedCommands=[auto, configure, cool, emergencyHeat, fanAuto, fanCirculate, fanOn, heat, initialize, off, refresh, setCoolingSetpoint, setHeatingSetpoint, setLevel, setThermostatFanMode, setThermostatMode]
+lanId=null
+endpointId=null
+singleThreaded=false
+controllerType=ZWV
+displayAsChild=null
+name=Eurotronic Spirit Thermostat
+capabilities=[Configuration, Actuator, Refresh, Battery, Initialize, SwitchLevel, TemperatureMeasurement, Thermostat]
+device=[id: 4225, name: Eurotronic Spirit Thermostat, label:  Eurotronic Spirit TRV, deviceNetworkId: 06, hubId: 1, parentDeviceId: null, isComponent: null, displayAsChild: null, locationId: 1, deviceTypeId: 346, zigbeeId: null, lanId: null, driverType: sys, linkedDevice: false]
+idAsLong=4225
+parentAppId=null
+class=class com.hubitat.app.DeviceWrapper
+disabled=false
+status=ACTIVE
+typeName=Eurotronic Spirit Thermostat
+linkedDevice=false
+driverType=sys
+label= Eurotronic Spirit TRV
+data={deviceType=3, deviceId=1, inClusters=0x5E,0x85,0x59,0x86,0x72,0x5A,0x75,0x31,0x26,0x40,0x43,0x80,0x70,0x71,0x73,0x98,0x9F,0x55,0x6C,0x7A, manufacturer=328}
+supportedAttributes=[coolingSetpoint, temperature, temperature, level, thermostatMode, heatingSetpoint, supportedThermostatModes, thermostatSetpoint, thermostatFanMode, thermostatOperatingState, supportedThermostatFanModes, battery]
+deviceNetworkId=06
+lastActivity=2023-11-09 13:14:52+0000
+roomId=65
+parentDeviceId=null
+displayName= Eurotronic Spirit TRV
+

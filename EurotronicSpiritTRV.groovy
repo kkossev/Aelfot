@@ -1,41 +1,45 @@
 /*
-* Eurotronic Spirit TRV driver for Hubitat 
-*
-* Description:
-* 
-*
-* Information:
-* https://community.hubitat.com/t/eurotronic-air-quality-and-z-wave-spirit-in-association/79841
-*
-* Credits:  
-*
-* Licensing:
-* Copyright 2020-2021 Ravil Rubashkin
-* Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
-* in compliance with the License. You may obtain a copy of the License at: http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
-* on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
-* for the specific language governing permissions and limitations under the License.
-*
-* Version Control:
-* 1.0.0  2021-02-06 aelfot    Initial version
-* 1.1.0  2021-09-20 aelfot    latest aelfot version on GitHub
-* 2.0.0  2021-12-17 kkossev   English language option and translation;
-* 2.0.1  2021-12-17 kkossev   Added Refresh and Initialize; added forceStateChange option
-* 2.0.2  2021-12-17 kkossev   Added refreshRate
-* 2.0.3  2021-12-18 kkossev   Added calibrate function
-* 2.0.4  2021-12-18 kkossev   calibrate optimization
-* 2.0.5  2022-12-16 kkossev   SwitchLevel capability removed
-* 2.1.0  2022-12-16 kkossev   (dev. branch) VSC; merged latest aelfor changes; added logDebug; added level attribute
-*
-*                    TODO: thermostatOperatingState stays in cooling?
-*                    TODO: implement health check
-*                    TODO: implement ping
-*
+ * Eurotronic Spirit TRV driver for Hubitat 
+ *
+ * Description:
+ * 
+ *
+ * Information:
+ * https://community.hubitat.com/t/eurotronic-air-quality-and-z-wave-spirit-in-association/79841
+ *
+ * Credits:  
+ *
+ * Licensing:
+ * Copyright 2020-2021 Ravil Rubashkin
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at: http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ * for the specific language governing permissions and limitations under the License.
+ *
+ * Version Control:
+ * 1.0.0  2021-02-06 aelfot    Initial version
+ * 1.1.0  2021-09-20 aelfot    latest aelfot version on GitHub
+ * 2.0.0  2021-12-17 kkossev   English language option and translation;
+ * 2.0.1  2021-12-17 kkossev   Added Refresh and Initialize; added forceStateChange option
+ * 2.0.2  2021-12-17 kkossev   Added refreshRate
+ * 2.0.3  2021-12-18 kkossev   Added calibrate function
+ * 2.0.4  2021-12-18 kkossev   calibrate optimization
+ * 2.0.5  2022-12-16 kkossev   SwitchLevel capability removed
+ * 2.1.0  2023-11-10 kkossev   (dev. branch) VSC; merged latest aelfor changes; improved logDebug; added level attribute; calibrate retries bug fix; 
+ *
+ *                    TODO: add refresh 30 and 60 minutes; 
+ *                    TODO: add driver vesion to the states
+ *                    TODO: calibrate retries are not working !!!!
+ *                    TODO: logsOff() after 24 hours
+ *                    TODO: thermostatOperatingState stays in cooling?
+ *                    TODO: implement health check
+ *                    TODO: implement ping
+ *
 */
 
 def version() { "2.1.0" }
-def timeStamp() {"2023/11/09 9:06 PM"}
+def timeStamp() {"2023/11/10 97:23 AM"}
 
 import groovy.transform.Field
 import hubitat.helper.HexUtils
@@ -56,11 +60,14 @@ metadata {
         attribute "Notifity",           "string"
         attribute "deviceResetLocally", "bool"
         attribute "level",              "number" // valve position
+        attribute "lock", "enum", ["locked", "unlocked with timeout", "unlocked", "unknown"]
 
         //command "SendTemperature", [[name: "Temperature", type: "NUMBER", description:""]]
         command "manual"
         command "disableLocalOperations"    //"lokaleBedinungDeaktiviert"
         command "calibrate"
+        command "lock"
+        command "unlock"
 
         fingerprint mfr:"0148", prod:"0003", deviceId:"0001", inClusters:"0x5E,0x55,0x98,0x9F"
         fingerprint mfr:"0148", prod:"0003", deviceId:"0001", inClusters:"0x5E,0x85,0x59,0x86,0x72,0x5A,0x75,0x31,0x26,0x40,0x43,0x80,0x70,0x71,0x73,0x98,0x9F,0x55,0x6C,0x7A"
@@ -117,8 +124,8 @@ metadata {
     }
 }
 
-@Field static Map commandClassVersions =
-    [0x85:2,    //Association
+@Field static Map commandClassVersions = [
+     0x85:2,    //Association
      0x59:1,    //Association Group Information
      0x20:1,    //Basic
      0x80:1,    //Battery
@@ -136,7 +143,10 @@ metadata {
      0x43:3,    //Thermostat Setpoint
      0x55:2,    //Transport Service ohne verschlüsselung
      0x86:2,    //Version
-     0x5E:2]    //Z-Wave Plus Info ohne verschlüsselung
+     0x5E:2     //Z-Wave Plus Info ohne verschlüsselung
+] 
+
+@Field static final Integer pollTimer = 3    // seconds
 
 def parse(String description) {
     def cmd = zwave.parse(description, commandClassVersions)
@@ -533,6 +543,7 @@ void setCoolingSetpoint(temperature) {
     cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointSet(precision:1, scale:0, scaledValue: nextTemperature, setpointType: 0x0B)
     cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x0B)
     sendToDevice(cmds)
+    runIn(pollTimer, "poll", [overwrite: true])
 }
 
 void setHeatingSetpoint(temperature) {
@@ -543,6 +554,7 @@ void setHeatingSetpoint(temperature) {
     cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointSet(precision:1, scale:0, scaledValue: nextTemperature, setpointType: 0x01)
     cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x01)
     sendToDevice(cmds)
+    runIn(pollTimer, "poll", [overwrite: true])
 }
 
 private getTemperature (setTemperature, modus) {
@@ -606,6 +618,7 @@ void setThermostatMode(thermostatmode) {
             manual()
             break;
     }
+    runIn(pollTimer, "poll", [overwrite: true])
 }
 
 void lock() {
@@ -701,86 +714,103 @@ void sendConfigurationCommand (List<Integer> zuErneuerndeParametern) {
 @Field static final Integer CALIBRATE_CHECK_IF_TURNED_HEAT    = 7
 @Field static final Integer CALIBRATE_END                     = 8
 
-@Field static final Integer CALIBRATE_RETRIES_NR              = 3
+@Field static final Integer CALIBRATE_RETRIES_NR              = 2
 
 
 def calibrate() {
-    logDebug "starting calibrate() for ${device.displayName} .."
+    logInfo "starting calibrate procedure for ${device.displayName} ..."
     runIn (01, 'calibrateStateMachine',  [data: ["state": CALIBRATE_START, "retry": 0]])
 }
 
 def calibrateStateMachine( Map data ) {
     switch (data.state) {
         case CALIBRATE_IDLE :   
-            log.trace "data.state IDLE"
+            state.retries = 0
+            logDebug "data.state IDLE"
             break
         case CALIBRATE_START :  // 1 starting the calibration state machine
-            log.debug "data.state ($data.state) ->  start"
-            runIn (01, 'calibrateStateMachine', [data: ["state": CALIBRATE_TURN_OFF, "retry": 0]])
+            logDebug "data.state ($data.state) ->  start"
+            state.retries = 0
+            runIn (01, 'calibrateStateMachine', [data: ["state": CALIBRATE_TURN_OFF]])
             break
         case CALIBRATE_TURN_OFF :  // turn off
+            logInfo "turning off..."
             off()            // close the valve 100%
-            log.debug "data.state ($data.state) -> now turning OFF"
-            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_OFF, "retry": 0]])
+            logDebug "data.state ($data.state) -> now turning OFF"
+            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_OFF]])
             break
         case CALIBRATE_CHECK_IF_TURNED_OFF :
             if (device.currentValue("thermostatMode") == "off" ) {    // TRV was successfuly turned off in the previous step
-                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_EMERGENCY_HEAT, "retry": 0]])
+                state.retries = 0
+                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_EMERGENCY_HEAT]])
             }
-            else if (data.retry < CALIBRATE_RETRIES_NR) {    // retry
-                log.warn "ERROR turning OFF - retrying...($data.retry)"
-                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_OFF, "retry": data.retry+1]])
+            else if (state.retries < CALIBRATE_RETRIES_NR) {    // retry
+                state.retries = state.retries + 1
+                logWarn "ERROR turning OFF - retrying...($state.retries )"
+                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_OFF]])
             }
             else {
                 log.error "ERROR turning OFF - GIVING UP!...state is ($data.state)"
-                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT, "retry": 0]])
+                state.retries = 0
+                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT]])
             }
             break
         case CALIBRATE_TURN_EMERGENCY_HEAT : // turn emergencyHeat
+            logInfo "turning emergency heat..."
             log.trace "data.state ($data.state) -> now turning EMERGENCY_HEAT"
             emergencyHeat()    // open the valve 100%
-            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT, "retry": 0]])
+            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT]])
             break        
         case CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT :
             if (device.currentValue("thermostatMode") == "emergency heat" ) {    // TRV has been successfuly swithed to emergency heat in the previous step
-                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT, "retry": 0]])
-            }  else if (data.retry < CALIBRATE_RETRIES_NR) {    // retry
-                log.error "ERROR turning emergency heat - retrying...($data.retry)"
-                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_EMERGENCY_HEAT, "retry": data.retry+1]])
+                state.retries = 0
+                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT]])
+            }  else if (state.retries < CALIBRATE_RETRIES_NR) {    // retry
+                state.retries = state.retries +1
+                logWarn "ERROR turning emergency heat - retrying...($state.retries)"
+                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_EMERGENCY_HEAT]])
             } else {
                 log.error "ERROR turning emergency heat - GIVING UP!... state is($data.state)"
-                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT, "retry": 0]])
+                state.retries = 0
+                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT]])
             }
             break
         case CALIBRATE_TURN_HEAT :     // turn heat (auto)
-            log.debug "data.state ($data.state) -> now turning heat/auto"
+            logInfo "restoring back to heat/auto..."
+            logDebug "data.state ($data.state) -> now turning heat/auto"
             heat()    // back to heat mode
-            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_HEAT, "retry": 0]])
+            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_HEAT]])
             break
         case CALIBRATE_CHECK_IF_TURNED_HEAT :
             if (device.currentValue("thermostatMode") == "heat" ) {    // TRV has been successfuly turned to heat mode in the previous step
-                runIn (10, calibrateStateMachine, [data: ["state": CALIBRATE_END, "retry": 0]])
+                state.retries = 0
+                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_END, "retry": 0]])
             }
-            else if (data.retry < CALIBRATE_RETRIES_NR ) {    // retry
-                log.warn "ERROR turning heat - retrying...($data.retry)"
-                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT, "retry": data.retry+1]])
+            else if (state.retries  < CALIBRATE_RETRIES_NR ) {    // retry
+                state.retries = state.retries +1
+                logWarn "ERROR turning heat - retrying...($tate.retries)"
+                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT]])
             }
             else {
+                state.retries = 0
                 log.error "ERROR turning emergencyHeat - GIVING UP !... state is($data.state)"
-                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_END, "retry": 0]])
+                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_END]])
             }
             break
         case CALIBRATE_END :   // verify if back to heat (auto)
             if (device.currentValue("thermostatMode") == "heat" ) {    // TRV has been successfuly turned to heat/auto
-                log.info "data.state ($data.state) ->  finished successfuly"
+                logInfo "calibratrion  finished successfuly"
+                logDebug "data.state ($data.state) ->  finished successfuly"
             }
             else {
                 log.error "ERROR CALIBRATE_END - GIVING UP!... state is ($data.state)"
             }
+            state.retries = 0
             unschedule(calibrateStateMachine)
             break
         default :
             log.error "state calibrate UNKNOWN = ${data.state}"
+            state.retries = 0
             unschedule(calibrateStateMachine)
             break
     }
@@ -846,6 +876,7 @@ def setDeviceLimits() { // for google and amazon compatability
 
 def initialize() {
     log.info "initialize..."
+    state.retries = 0
     setDeviceLimits()
     installed()
 }

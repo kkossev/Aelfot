@@ -26,27 +26,25 @@
  * 2.0.3  2021-12-18 kkossev   Added calibrate function
  * 2.0.4  2021-12-18 kkossev   calibrate optimization
  * 2.0.5  2022-12-16 kkossev   SwitchLevel capability removed
- * 2.1.0  2023-11-10 kkossev   (dev. branch) VSC; merged latest aelfor changes; improved logDebug; added level attribute; calibrate retries bug fix; 
+ * 2.1.0  2023-11-10 kkossev   (dev. branch) VSC; merged latest aelfor changes; improved logDebug; added level attribute; calibrate retries bug fix; added refresh 30 and 60 minutes; made the polling after temperature change configurable;
+ *                             added calibrate as a mode; added logsOff; removed Initialize as capability; implemented health check
  *
- *                    TODO: add refresh 30 and 60 minutes; 
- *                    TODO: add driver vesion to the states
- *                    TODO: calibrate retries are not working !!!!
- *                    TODO: logsOff() after 24 hours
- *                    TODO: thermostatOperatingState stays in cooling?
- *                    TODO: implement health check
+ *                    TODO: add driver vesion to the states; 
+ *                    TODO: add lastRunnimngMode ?
+ *                    TODO: do not start calibrate if the valve is fully opened or closed ?
  *                    TODO: implement ping
  *
 */
 
 def version() { "2.1.0" }
-def timeStamp() {"2023/11/10 97:23 AM"}
+def timeStamp() {"2023/11/10 11:32 AM"}
 
 import groovy.transform.Field
 import hubitat.helper.HexUtils
 import hubitat.device.HubAction
 
 metadata {
-    definition (name: "Eurotronic Spirit TRV", namespace: "aelfot", author: "Ravil Rubashkin") {
+    definition (name: "Eurotronic Spirit TRV", namespace: "aelfot", author: "Ravil Rubashkin", importUrl: "https://raw.githubusercontent.com/kkossev/hubitat-Aelfot-fork/development/EurotronicSpiritTRV.groovy", singleThreaded: true ) {
         capability "Battery"
         capability "Thermostat"
         capability "Actuator"
@@ -54,8 +52,9 @@ metadata {
         capability "TemperatureMeasurement"
         capability "Polling"
         capability "Refresh"
-        capability "Initialize"
-
+        //capability "Initialize"
+        capability "HealthCheck"
+        
         attribute "externeTemperatur",  "string"
         attribute "Notifity",           "string"
         attribute "deviceResetLocally", "bool"
@@ -63,6 +62,7 @@ metadata {
         attribute "lock", "enum", ["locked", "unlocked with timeout", "unlocked", "unknown"]
 
         //command "SendTemperature", [[name: "Temperature", type: "NUMBER", description:""]]
+        command "initialize"
         command "manual"
         command "disableLocalOperations"    //"lokaleBedinungDeaktiviert"
         command "calibrate"
@@ -89,6 +89,8 @@ metadata {
         refreshRates << ["5" : englishLang==true ? "Refresh every 5 minutes" : "Alle 5 Minuten aktualisieren"]
         refreshRates << ["10" : englishLang==true ? "Refresh every 10 minutes" : "Alle 10 Minuten aktualisieren"]
         refreshRates << ["15" : englishLang==true ? "Refresh every 15 minutes" : "Alle 15 Minuten aktualisieren"]
+        refreshRates << ["30" : englishLang==true ? "Refresh every 30 minutes" : "Alle 30 Minuten aktualisieren"]
+        refreshRates << ["60" : englishLang==true ? "Refresh every 60 minutes" : "Alle 60 Minuten aktualisieren"]
 
     preferences {
         input (name: "txtEnable", type: "bool",   title: "<b>Description text logging</b>", description: "<i>Display sensor states on HE log page. The recommended value is <b>true</b></i>", defaultValue: true)
@@ -105,7 +107,8 @@ metadata {
             input name: "parameter8",    type:"number",  title: "<b>Temperature offset</b>",                description: "Default: no correction. range: -5.0..5.0",  defaultValue:0,      range: "-5.0..5.0"
             input name: "parameter9",    type:"bool",    title: "<b>Use external temperature sensor?</b>",  description: "Default: No",                               defaultValue:false
             input name: "forceStateChange",type:"bool",  title: "<b>Force State Change</b>",                description: "Default: No (used for better graphs only)", defaultValue:false
-            input name: "refreshRate",  type: "enum",    title: "<b>Refresh rate</b>",                      description: "Select refresh rate",                       defaultValue: "0",   required: false, options: refreshRates
+            input name: "forcePolling",  type:"bool",    title: "<b>Force TRV polling after changes</b>",   description: "Default: No (used for faster status update)", defaultValue:false
+            input name: "refreshRate",   type: "enum",   title: "<b>Refresh rate</b>",                      description: "Select refresh rate",                       defaultValue: "0",   required: false, options: refreshRates
         }
         else
         {
@@ -119,6 +122,7 @@ metadata {
             input name: "parameter8",    type:"number",  title: "<b>Temperature offset</b>",                description: "Default: Keine Korrektur",        defaultValue:0,      range: "-5.0..5.0"
             input name: "parameter9",    type:"bool",    title: "<b>Temperatur extern bereitgestellt?</b>", description: "Default: Nein",                   defaultValue:false
             input name: "forceStateChange",type:"bool",  title: "<b>Force State Change</b>",                description: "Default: Nein (nur für bessere Grafiken verwendet)",   defaultValue:false
+            input name: "forcePolling",  type:"bool",    title: "<b>TRV-Abfrage nach Änderungen erzwingen</b>",   description: "Default: Nein (wird für eine schnellere Statusaktualisierung verwendet)", defaultValue:false
             input name: "refreshRate",   type: "enum",   title: "<b>Aktualisierungsrate</b>",               description: "Default: Nein",                   defaultValue: "0",   required: false, options: refreshRates
         }            
     }
@@ -147,8 +151,11 @@ metadata {
 ] 
 
 @Field static final Integer pollTimer = 3    // seconds
+@Field static final Integer presenceCountTreshold = 4
 
 def parse(String description) {
+    checkDriverVersion()
+    setPresent()
     def cmd = zwave.parse(description, commandClassVersions)
     if (cmd) {
         return zwaveEvent(cmd)
@@ -543,7 +550,7 @@ void setCoolingSetpoint(temperature) {
     cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointSet(precision:1, scale:0, scaledValue: nextTemperature, setpointType: 0x0B)
     cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x0B)
     sendToDevice(cmds)
-    runIn(pollTimer, "poll", [overwrite: true])
+    if (forcePolling==true) {runIn(pollTimer, "poll", [overwrite: true])}
 }
 
 void setHeatingSetpoint(temperature) {
@@ -554,7 +561,7 @@ void setHeatingSetpoint(temperature) {
     cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointSet(precision:1, scale:0, scaledValue: nextTemperature, setpointType: 0x01)
     cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x01)
     sendToDevice(cmds)
-    runIn(pollTimer, "poll", [overwrite: true])
+    if (forcePolling==true) {runIn(pollTimer, "poll", [overwrite: true])}
 }
 
 private getTemperature (setTemperature, modus) {
@@ -601,24 +608,29 @@ void setThermostatMode(thermostatmode) {
     switch (thermostatmode) {
         case "emergency heat":
             emergencyHeat()
-            break;
+            break
         case "cool":
             cool()
-            break;
+            break
         case "heat":
             heat()
-            break;
+            break
         case "off":
             off()
-            break;
+            break
         case "auto":
             auto()
-            break;
+            break
         case "manual":
             manual()
-            break;
-    }
-    runIn(pollTimer, "poll", [overwrite: true])
+            break
+        case "calibrate":
+            calibrate()
+            break
+        default:
+            log.warn "Unknown thermostat mode ${thermostatmode}"
+    }    
+    if (forcePolling==true) {runIn(pollTimer, "poll", [overwrite: true])}
 }
 
 void lock() {
@@ -719,7 +731,8 @@ void sendConfigurationCommand (List<Integer> zuErneuerndeParametern) {
 
 def calibrate() {
     logInfo "starting calibrate procedure for ${device.displayName} ..."
-    runIn (01, 'calibrateStateMachine',  [data: ["state": CALIBRATE_START, "retry": 0]])
+    state.retries = 0
+    runIn (01, 'calibrateStateMachine',  [data: ["state": CALIBRATE_START]])
 }
 
 def calibrateStateMachine( Map data ) {
@@ -731,18 +744,41 @@ def calibrateStateMachine( Map data ) {
         case CALIBRATE_START :  // 1 starting the calibration state machine
             logDebug "data.state ($data.state) ->  start"
             state.retries = 0
-            runIn (01, 'calibrateStateMachine', [data: ["state": CALIBRATE_TURN_OFF]])
+            runIn (01, 'calibrateStateMachine', [data: ["state": CALIBRATE_TURN_EMERGENCY_HEAT]])
             break
+            
+        case CALIBRATE_TURN_EMERGENCY_HEAT : // turn emergencyHeat
+            logInfo "turning emergency heat..."
+            log.trace "data.state ($data.state) -> now turning EMERGENCY_HEAT"
+            emergencyHeat()    // open the valve 100%
+            runIn (10, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT]])
+            break        
+        case CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT :
+            if (device.currentValue("thermostatMode") == "emergency heat" ) {    // TRV has been successfuly swithed to emergency heat in the previous step
+                state.retries = 0
+                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_OFF]])
+            }  else if (state.retries < CALIBRATE_RETRIES_NR) {    // retry
+                state.retries = state.retries +1
+                logWarn "ERROR turning emergency heat - retrying...($state.retries)"
+                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_EMERGENCY_HEAT]])
+            } else {
+                log.error "ERROR turning emergency heat - GIVING UP!... state is($data.state)"
+                state.retries = 0
+                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT]])
+            }
+            break
+
+            
         case CALIBRATE_TURN_OFF :  // turn off
             logInfo "turning off..."
             off()            // close the valve 100%
             logDebug "data.state ($data.state) -> now turning OFF"
-            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_OFF]])
+            runIn (10, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_OFF]])
             break
         case CALIBRATE_CHECK_IF_TURNED_OFF :
             if (device.currentValue("thermostatMode") == "off" ) {    // TRV was successfuly turned off in the previous step
                 state.retries = 0
-                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_EMERGENCY_HEAT]])
+                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT]])
             }
             else if (state.retries < CALIBRATE_RETRIES_NR) {    // retry
                 state.retries = state.retries + 1
@@ -755,40 +791,21 @@ def calibrateStateMachine( Map data ) {
                 runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT]])
             }
             break
-        case CALIBRATE_TURN_EMERGENCY_HEAT : // turn emergencyHeat
-            logInfo "turning emergency heat..."
-            log.trace "data.state ($data.state) -> now turning EMERGENCY_HEAT"
-            emergencyHeat()    // open the valve 100%
-            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT]])
-            break        
-        case CALIBRATE_CHECK_IF_TURNED_EMERGENCY_HEAT :
-            if (device.currentValue("thermostatMode") == "emergency heat" ) {    // TRV has been successfuly swithed to emergency heat in the previous step
-                state.retries = 0
-                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT]])
-            }  else if (state.retries < CALIBRATE_RETRIES_NR) {    // retry
-                state.retries = state.retries +1
-                logWarn "ERROR turning emergency heat - retrying...($state.retries)"
-                runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_EMERGENCY_HEAT]])
-            } else {
-                log.error "ERROR turning emergency heat - GIVING UP!... state is($data.state)"
-                state.retries = 0
-                runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT]])
-            }
-            break
+
         case CALIBRATE_TURN_HEAT :     // turn heat (auto)
             logInfo "restoring back to heat/auto..."
             logDebug "data.state ($data.state) -> now turning heat/auto"
             heat()    // back to heat mode
-            runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_HEAT]])
+            runIn (10, calibrateStateMachine, [data: ["state": CALIBRATE_CHECK_IF_TURNED_HEAT]])
             break
         case CALIBRATE_CHECK_IF_TURNED_HEAT :
             if (device.currentValue("thermostatMode") == "heat" ) {    // TRV has been successfuly turned to heat mode in the previous step
                 state.retries = 0
-                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_END, "retry": 0]])
+                runIn (1, calibrateStateMachine, [data: ["state": CALIBRATE_END]])
             }
             else if (state.retries  < CALIBRATE_RETRIES_NR ) {    // retry
                 state.retries = state.retries +1
-                logWarn "ERROR turning heat - retrying...($tate.retries)"
+                logWarn "ERROR turning heat - retrying...($state.retries)"
                 runIn (5, calibrateStateMachine, [data: ["state": CALIBRATE_TURN_HEAT]])
             }
             else {
@@ -797,6 +814,8 @@ def calibrateStateMachine( Map data ) {
                 runIn (3, calibrateStateMachine, [data: ["state": CALIBRATE_END]])
             }
             break
+
+
         case CALIBRATE_END :   // verify if back to heat (auto)
             if (device.currentValue("thermostatMode") == "heat" ) {    // TRV has been successfuly turned to heat/auto
                 logInfo "calibratrion  finished successfuly"
@@ -818,6 +837,14 @@ def calibrateStateMachine( Map data ) {
 
 void updated() {
     log.info "Device ${device.label?device.label:device.name} is updated"
+    scheduleDeviceHealthCheck()
+    if (logEnable==true) {
+        runIn(86400, logsOff, [overwrite: true])    // turn off debug logging after 24 hours
+        logInfo "Debug logging will be turned off after 24 hours"
+    }
+    else {
+        unschedule(logsOff)
+    }    
     def cmds = []
     cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber:1,    size:1,    scaledConfigurationValue: parameter1 ? 0x01 : 0x00)
     logInfo englishLang ? "Parameter 1 will be set to ${parameter1 ? 0x01 : 0x00}" : "Parameter 1 hat den Wert ${parameter1 ? 0x01 : 0x00} übermittelt bekommen"
@@ -851,8 +878,8 @@ void installed() {
     log.info "Device ${device.label?device.label:device.name} is installed"
     sendEvent(name:"Notifity",                        value:"Installed", displayed: true)
     sendEvent(name:"deviceResetLocally",            value:false, displayed: true)
-    sendEvent(name:"supportedThermostatFanModes",     value: groovy.json.JsonOutput.toJson(["circulate"]), displayed: true)
-    sendEvent(name:"supportedThermostatModes",        value: groovy.json.JsonOutput.toJson(["off", "heat", "emergency heat", "cool", "manual"]), displayed: true)
+    sendEvent(name:"supportedThermostatFanModes",     value: groovy.json.JsonOutput.toJson(["circulate"]), isStateChange: true)
+    sendEvent(name:"supportedThermostatModes",        value: groovy.json.JsonOutput.toJson(["off", "heat", "emergency heat", "cool", "manual", "calibrate"]), isStateChange: true)
     def cmds = []
     cmds << new hubitat.zwave.commands.protectionv1.ProtectionGet()
     cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x01)
@@ -862,7 +889,7 @@ void installed() {
     cmds << new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)
     for (int i=1 ; i<=8 ; i++) {
         cmds << new hubitat.zwave.commands.configurationv1.ConfigurationSet(parameterNumber: i, defaultValue: true)
-        log.info "Parameter nummer ${i} ist zurückgesetzt"
+        logInfo englishLang ? "Parameter number ${i} is reset" : "Parameter nummer ${i} ist zurückgesetzt"
     }
     sendToDevice(cmds)
 }
@@ -873,6 +900,10 @@ def setDeviceLimits() { // for google and amazon compatability
     logDebug "setDeviceLimits - device max/min set"
 }    
 
+def logsOff(){
+    if (settings?.logEnable) log.info "${device.displayName} debug logging disabled..."
+    device.updateSetting("logEnable",[value:"false",type:"bool"])
+}
 
 def initialize() {
     log.info "initialize..."
@@ -943,7 +974,6 @@ void refresh() {
     cmds << new hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelGet(sensorType:1)    // temperature
     cmds << new hubitat.zwave.commands.thermostatmodev3.ThermostatModeGet()                    // operation mode (heat, cool, ...)
     cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x01)    // heatingSetpoint 
-    //cmds << new hubitat.zwave.commands.thermostatsetpointv3.ThermostatSetpointGet(setpointType:0x0B)    // coolingSetpoint - not needed!
     sendToDevice(cmds)
     logInfo "Refreshing..."    
 }
@@ -955,27 +985,76 @@ void autoRefresh() {
         switch(refreshRate) {
             case "1" :
                 runEvery1Minute(refresh)
-                log.info "Refresh Scheduled for every minute"
-                break
-            case "15" :
-                runEvery15Minutes(refresh)
-                log.info "Refresh Scheduled for every 15 minutes"
-                break
-            case "10" :
-                runEvery10Minutes(refresh)
-                log.info "Refresh Scheduled for every 10 minutes"
                 break
             case "5" :
                 runEvery5Minutes(refresh)
-                log.info "Refresh Scheduled for every 5 minutes"
+                break
+            case "10" :
+                runEvery10Minutes(refresh)
+                break
+            case "15" :
+                runEvery15Minutes(refresh)
+                break
+            case "30" :
+                runEvery30Minutes(refresh)
+                break
+            case "60" :
+                runEvery1Hour(refresh)
                 break
             case "0" :
             default :
-                   unschedule(refresh)
+                unschedule(refresh)
                 log.info "Auto Refresh off"
+                return
         }
+        logInfo "Refresh Scheduled for every ${refreshRate} minutes"
     }
 }
+
+def driverVersionAndTimeStamp() {version()+' '+timeStamp()}
+
+def checkDriverVersion() {
+    if (state.driverVersion == null || driverVersionAndTimeStamp() != state.driverVersion) {
+        logInfo "updating the settings from the current driver version ${state.driverVersion} to the new version ${driverVersionAndTimeStamp()}"
+        scheduleDeviceHealthCheck()
+        state.driverVersion = driverVersionAndTimeStamp()
+    }
+}
+
+void scheduleDeviceHealthCheck() {
+    Random rnd = new Random()
+    //schedule("1 * * * * ? *", 'deviceHealthCheck') // for quick test
+    schedule("${rnd.nextInt(59)} ${rnd.nextInt(59)} 1/3 * * ? *", 'deviceHealthCheck')
+}
+
+// called when any event was received from the Zigbee device in parse() method..
+def setPresent() {
+    if ((device.currentValue("healthStatus") ?: "unknown") != "online") {
+        sendHealthStatusEvent("online")
+        logInfo "is present"
+    }    
+    state.notPresentCounter = 0    
+}
+
+def deviceHealthCheck() {
+    state.notPresentCounter = (state.notPresentCounter ?: 0) + 1
+    if (state.notPresentCounter > presenceCountTreshold) {
+        if ((device.currentValue("healthStatus", true) ?: "unknown") != "offline" ) {
+            sendHealthStatusEvent("offline")
+            if (settings?.txtEnable) { log.warn "${device.displayName} is not present!" }
+            // TODO - send alarm ?
+        }
+    }
+    else {
+        logDebug "deviceHealthCheck - online (notPresentCounter=${state.notPresentCounter})"
+    }
+    
+}
+
+def sendHealthStatusEvent(value) {
+    sendEvent(name: "healthStatus", value: value, descriptionText: "${device.displayName} healthStatus set to $value")
+}
+
 
 def logDebug(msg) {
     if (settings?.logEnable) {

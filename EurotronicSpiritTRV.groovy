@@ -26,18 +26,18 @@
  * 2.0.3  2021-12-18 kkossev   Added calibrate function
  * 2.0.4  2021-12-18 kkossev   calibrate optimization
  * 2.0.5  2022-12-16 kkossev   SwitchLevel capability removed
- * 2.1.0  2023-11-10 kkossev   (dev. branch) VSC; merged latest aelfor changes; improved logDebug; added level attribute; calibrate retries bug fix; added refresh 30 and 60 minutes; made the polling after temperature change configurable;
- *                             added calibrate as a mode; added logsOff; removed Initialize as capability; implemented health check
+ * 2.1.0  2023-11-10 kkossev   VSC; merged latest aelfor changes; improved logDebug; added level attribute; calibrate retries bug fix; added refresh 30 and 60 minutes; made the polling after temperature change configurable;
+ *                             added calibrate as a mode; added logsOff; removed Initialize as capability; implemented health check; added driver vesion to the states; 
  *
- *                    TODO: add driver vesion to the states; 
+ *                    TODO: implement ping
+ *                    TODO: add [Refresh] in the events; add descriptions to the events
  *                    TODO: add lastRunnimngMode ?
  *                    TODO: do not start calibrate if the valve is fully opened or closed ?
- *                    TODO: implement ping
  *
 */
 
 def version() { "2.1.0" }
-def timeStamp() {"2023/11/10 11:32 AM"}
+def timeStamp() {"2023/11/10 11:59 AM"}
 
 import groovy.transform.Field
 import hubitat.helper.HexUtils
@@ -55,6 +55,7 @@ metadata {
         //capability "Initialize"
         capability "HealthCheck"
         
+        attribute "healthStatus", "enum", ["offline", "online", "unknown"]
         attribute "externeTemperatur",  "string"
         attribute "Notifity",           "string"
         attribute "deviceResetLocally", "bool"
@@ -84,9 +85,9 @@ metadata {
         windowDetectOptions << [3 : englishLang==true ? "High sensitivity" : "Empfindlichkeit hoch"]
 
     def refreshRates = [:]
-        refreshRates << ["0" : englishLang==true ? "Disabled - Set temperature, valve & battery reports, if required" : "Deaktiviert – Temperatur, Valve und Batterieberichte einstellen, falls erforderlich"]
-        refreshRates << ["1" : englishLang==true ? "Refresh every minute (Not recommended)" : "Jede Minute aktualisieren (Nicht empfohlen)"]
-        refreshRates << ["5" : englishLang==true ? "Refresh every 5 minutes" : "Alle 5 Minuten aktualisieren"]
+        refreshRates << ["0"  : englishLang==true ? "Disabled - Set temperature, valve & battery reports, if required" : "Deaktiviert – Temperatur, Valve und Batterieberichte einstellen, falls erforderlich"]
+        refreshRates << ["1"  : englishLang==true ? "Refresh every minute (Not recommended)" : "Jede Minute aktualisieren (Nicht empfohlen)"]
+        refreshRates << ["5"  : englishLang==true ? "Refresh every 5 minutes" : "Alle 5 Minuten aktualisieren"]
         refreshRates << ["10" : englishLang==true ? "Refresh every 10 minutes" : "Alle 10 Minuten aktualisieren"]
         refreshRates << ["15" : englishLang==true ? "Refresh every 15 minutes" : "Alle 15 Minuten aktualisieren"]
         refreshRates << ["30" : englishLang==true ? "Refresh every 30 minutes" : "Alle 30 Minuten aktualisieren"]
@@ -106,7 +107,7 @@ metadata {
             input name: "parameter7",    type:"enum",    title: "<b>Window Open Detection</b>",             description: "Default: Medium sensitivity",               defaultValue:2,      options: windowDetectOptions
             input name: "parameter8",    type:"number",  title: "<b>Temperature offset</b>",                description: "Default: no correction. range: -5.0..5.0",  defaultValue:0,      range: "-5.0..5.0"
             input name: "parameter9",    type:"bool",    title: "<b>Use external temperature sensor?</b>",  description: "Default: No",                               defaultValue:false
-            input name: "forceStateChange",type:"bool",  title: "<b>Force State Change</b>",                description: "Default: No (used for better graphs only)", defaultValue:false
+            input name: "forceStateChange", type:"bool", title: "<b>Force State Change</b>",                description: "Default: No (used for better graphs only)", defaultValue:false
             input name: "forcePolling",  type:"bool",    title: "<b>Force TRV polling after changes</b>",   description: "Default: No (used for faster status update)", defaultValue:false
             input name: "refreshRate",   type: "enum",   title: "<b>Refresh rate</b>",                      description: "Select refresh rate",                       defaultValue: "0",   required: false, options: refreshRates
         }
@@ -121,7 +122,7 @@ metadata {
             input name: "parameter7",    type:"enum",    title: "<b>Fensteroffnungserkennung</b>",          description: "Default: Empfindlichkeit mittel", defaultValue:2,      options: windowDetectOptions
             input name: "parameter8",    type:"number",  title: "<b>Temperature offset</b>",                description: "Default: Keine Korrektur",        defaultValue:0,      range: "-5.0..5.0"
             input name: "parameter9",    type:"bool",    title: "<b>Temperatur extern bereitgestellt?</b>", description: "Default: Nein",                   defaultValue:false
-            input name: "forceStateChange",type:"bool",  title: "<b>Force State Change</b>",                description: "Default: Nein (nur für bessere Grafiken verwendet)",   defaultValue:false
+            input name: "forceStateChange", type:"bool", title: "<b>Force State Change</b>",                description: "Default: Nein (nur für bessere Grafiken verwendet)",   defaultValue:false
             input name: "forcePolling",  type:"bool",    title: "<b>TRV-Abfrage nach Änderungen erzwingen</b>",   description: "Default: Nein (wird für eine schnellere Statusaktualisierung verwendet)", defaultValue:false
             input name: "refreshRate",   type: "enum",   title: "<b>Aktualisierungsrate</b>",               description: "Default: Nein",                   defaultValue: "0",   required: false, options: refreshRates
         }            

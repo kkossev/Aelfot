@@ -1,3 +1,14 @@
 {
+<<<<<<< HEAD
   "files": []
+=======
+  "files": [
+    {
+      "filepath": "/c:/Work/hubitat-Aelfot-fork/EurotronicSpiritTRV.groovy",
+      "id": 2658,
+      "codeType": "driver",
+      "version": 41
+    }
+  ]
+>>>>>>> development
 }
